@@ -1,0 +1,11 @@
+{
+  "name": "supplement-widget",
+  "version": "1.0.0",
+  "description": "补充提示挂件：对话内悬浮小挂件，点击即可让正在工作的 AI 立即通过提问功能询问你有什么要补充的，无需打断任务。",
+  "author": {
+    "name": "WorkBuddy"
+  },
+  "category": "效率工具",
+  "keywords": ["workbuddy", "widget", "mcp-app", "supplement", "挂件"],
+  "skills": "./skills"
+}

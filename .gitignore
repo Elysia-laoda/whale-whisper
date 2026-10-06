@@ -1,0 +1,18 @@
+# 依赖（npm install 重新安装即可）
+mcp-server/node_modules/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 备份与日志
+*.bak-*
+*.log
+*.tmp
+
+# 运行时状态（由安装/运行生成，不属于源码）
+overlay/overlay.pid
+
+# 系统文件
+.DS_Store
+Thumbs.db

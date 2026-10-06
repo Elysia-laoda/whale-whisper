@@ -1,0 +1,17 @@
+{
+  "name": "supplement-widget-mcp-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "补充提示挂件 —— WorkBuddy MCP App 服务器：对话内挂件，点击即让运行中的 AI 询问补充提示",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-server.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "^1.32.1"
+  }
+}
