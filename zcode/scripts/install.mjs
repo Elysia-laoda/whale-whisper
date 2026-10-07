@@ -82,13 +82,14 @@ if (noHooks) {
   const hookGroup = { hooks: [{ type: 'process', command: 'node', args: [hookJs], timeoutMs: 8000 }] };
   ensure('SessionStart', { matcher: 'startup|resume|clear', ...hookGroup }); // compact 时不重复注入
   ensure('UserPromptSubmit', hookGroup);
+  ensure('PreToolUse', hookGroup);    // 未决事件期间拒绝非提问工具（强制通道）
   ensure('PostToolUse', hookGroup);   // 无 matcher = 所有工具：消费 pending 的主路径
   ensure('Stop', hookGroup);
 
   backup(configPath);
   fs.mkdirSync(zcDir, { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n');
-  console.log('✓ [1/2] 已注册 hooks（SessionStart / UserPromptSubmit / PostToolUse / Stop）→', configPath);
+  console.log('✓ [1/2] 已注册 hooks（SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Stop）→', configPath);
 }
 
 /* ---------- 2. 安装技能 ---------- */

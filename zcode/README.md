@@ -23,16 +23,22 @@ While the AI is running a long task, adding a requirement mid-flight ("Chinese o
     ▼
 hooks/supplement-widget-hook.mjs  ← 注册在 ~/.zcode/cli/config.json
     │  SessionStart      注入挂件上下文（新会话知道这只鲸鱼存在）
-    │  UserPromptSubmit  消费 pending → 注入提问指令；识别"关掉挂件"意图
-    │  PostToolUse       消费 pending → 注入提问指令（任务运行中的主路径）
-    │  Stop              回合即将结束时兜底消费 → 阻止停止并要求先提问
+    │  UserPromptSubmit  消费 pending → 记为未决事件并注入指令；识别"关掉挂件"意图
+    │  PostToolUse       消费 pending → 记为未决事件并注入指令（任务运行中的主路径）；
+    │                    看到 AskUserQuestion 跑完 → 解除未决事件
+    │  PreToolUse        未决事件期间：拒绝除 AskUserQuestion 之外的一切工具调用（硬强制）
+    │  Stop              未决事件仍在 → decision:block 禁止收尾，要求先提问（兜底）
     ▼
 AI 调用 AskUserQuestion 问「有什么要补充的吗？」→ 按回答继续原任务
 ```
 
-设计原则：绝不打扰、绝不阻塞。钩子在任何异常下都静默退出（exit 0），不会拖住会话。
+**强制机制**：点击后事件进入"未决"状态，在模型真正调用 AskUserQuestion 之前，其他所有工具调用都被拒绝、回合不允许结束——模型无法假装没看见。防呆上限：工具拒绝最多 5 次、收尾拦截最多 2 次，超限或 15 分钟超时后自动解除，不会把会话锁死。用户主动发消息也视为接管并解除。
 
-Design principle: never disturb, never block. Hooks exit silently (exit 0) on any error and never stall the session.
+**Enforcement**: once clicked, the event stays "pending" until the model actually calls AskUserQuestion. In between, every other tool call is denied and the turn cannot end — the model cannot pretend not to see it. Safety caps: at most 5 tool denials and 2 stop-blocks per event; the enforcement also lifts on timeout (15 min) or when the user sends a message themselves.
+
+容错：钩子在任何异常下都静默退出（exit 0），不会拖住会话。
+
+Fault tolerance: hooks exit silently (exit 0) on any error and never stall the session.
 
 ## 安装 / Install
 
@@ -62,12 +68,14 @@ Sessions already open at install time do not pick up the new hooks; they load on
 - 任务运行中点一下小鲸鱼：只有一个活动会话时直接定向通知；检测到多个活动会话时弹出清单点选；没有活动会话时气泡提示。
 - 挂件可拖动，位置自动记忆（相对 ZCode 窗口与相对屏幕两套记忆）；右键菜单可重置位置 / 退出。
 - 对 AI 说"关掉挂件"，本会话就不再响应挂件事件。
+- 点鲸鱼后 AI **必须**先提问才能继续干活：提问前它的其他工具调用会被拒绝、回合不许收尾；如果它装没看见，钩子会一直拦到它问为止（有防呆上限，不会锁死会话）。
 - 请求 15 分钟内有效，超时作废；AI 不追问多半是当前工具还在跑，它会在下一个工具边界看到提醒。
 
 - The whale follows the ZCode desktop app: it docks at the bottom-right of the ZCode window when the app is open, hides about 3 seconds after the app closes or minimizes, and reappears with it. While ZCode is absent the whale stays hidden (the process keeps waiting).
 - Click the whale mid-task: with a single active session it notifies directly; with several, a picker opens; with none, a bubble explains.
 - The whale is draggable, remembers its position per anchor (ZCode window / screen), and offers reset/exit in the right-click menu.
 - Tell the AI "关掉挂件" (turn the widget off) to mute widget events for that session.
+- After a click, the AI **must** ask before continuing: until it calls AskUserQuestion, its other tool calls are denied and the turn cannot end (with safety caps, so the session can never deadlock).
 - A pending request expires after 15 minutes. If the AI doesn't ask right away, the current tool is still running — it sees the reminder at the next tool boundary.
 
 ## 文件结构 / Layout
