@@ -10,6 +10,10 @@
 
 参考交互设计：[DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget)（DSH 右下角小鲸鱼常驻挂件）。
 
+> 🐟 **ZCode 用户看这里**：本仓库 `zcode/` 目录是同一只小鲸鱼的 **ZCode 移植版**——钩子对接 `~/.zcode/cli/config.json`，会话枚举来自 ZCode 的 `db.sqlite`，桌面挂件跟随 ZCode 窗口显隐（ZCode CLI 不支持 MCP Apps，故无对话内卡片）。安装与使用见 [`zcode/README.md`](zcode/README.md)。
+
+> 🐟 **For ZCode users**: the `zcode/` directory in this repo is the same whale ported to **ZCode** — hooks registered in `~/.zcode/cli/config.json`, sessions enumerated from ZCode's `db.sqlite`, and the desktop widget follows the ZCode window's lifecycle (no in-conversation card, since the ZCode CLI does not render MCP Apps). See [`zcode/README.md`](zcode/README.md).
+
 本插件提供**两种形态**：
 
 | 形态 | 是什么 | 位置 |
