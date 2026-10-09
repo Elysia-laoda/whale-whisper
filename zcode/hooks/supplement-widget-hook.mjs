@@ -35,6 +35,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const DEBUG = process.env.SUPPLEMENT_WIDGET_HOOK_DEBUG === '1';
 const MAX_INJECTIONS = 4;                        // 会话开头注入上限（含 SessionStart）
@@ -112,6 +114,45 @@ function clearEvent(st, why) {
     eventLog('event ' + st.pendingEvent.id + ' cleared: ' + why);
   }
   st.pendingEvent = null;
+}
+
+/* ---------------- 桌面挂件自愈 ----------------
+ * 随 ZCode 会话启动确保小鲸鱼在跑：开机自启代理覆盖"开机"这一环，这里覆盖
+ * "进程被误杀/崩溃"这一环。挂件带命名互斥量，重复拉起会立即自行退出，无副作用。 */
+
+/** 桌面挂件是否在跑：pid 文件里的进程活着就认为在跑（省掉每次会话启动的拉起开销）。 */
+function overlayAlive() {
+  try {
+    const pid = Number.parseInt(fs.readFileSync(path.join(stateDir(), 'overlay.pid'), 'utf8').trim(), 10);
+    if (!pid) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return e && e.code === 'EPERM';   // 活着但无权限查询，同样视为在跑
+    }
+  } catch {
+    return false;
+  }
+}
+
+function ensureOverlay() {
+  if (process.env.SUPPLEMENT_WIDGET_NO_AUTOSTART === '1') return;
+  if (process.platform !== 'win32') return;
+  try {
+    if (overlayAlive()) return;
+    const launcher = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'overlay', 'start-overlay.vbs');
+    if (!fs.existsSync(launcher)) return;
+    const wscript = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe');
+    const child = spawn(fs.existsSync(wscript) ? wscript : 'wscript.exe', [launcher], {
+      detached: true, stdio: 'ignore', windowsHide: true,
+    });
+    child.on('error', () => { /* 拉起失败不影响会话 */ });
+    child.unref();
+    eventLog('overlay ensured (launcher spawned)');
+  } catch (e) {
+    debug('ensureOverlay failed', e && e.message);
+  }
 }
 
 /* ---------------- 会话 id 归一化 ----------------
@@ -241,6 +282,7 @@ function dispatch(input) {
   /* ---------- SessionStart ---------- */
   if (event === 'SessionStart') {
     if (st.dismissed) { debug('session dismissed, skip'); return null; }
+    ensureOverlay();   // 小鲸鱼随会话自愈（被误杀/崩溃也会回来）
     if (st.injected >= MAX_INJECTIONS) { debug('injection cap reached'); return null; }
     st.injected += 1;
     saveState(state);
@@ -334,6 +376,7 @@ function runAction(action) {
 /* ---------------- 自测 ---------------- */
 
 function selftest() {
+  process.env.SUPPLEMENT_WIDGET_NO_AUTOSTART = '1';   // 自测不许真去拉挂件
   const cases = [];
   const push = (name, fn) => {
     try {

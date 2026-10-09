@@ -62,6 +62,10 @@ Then double-click `overlay/start-overlay.vbs` to start the whale; double-click `
 
 Sessions already open at install time do not pick up the new hooks; they load on the next session (or after restarting ZCode).
 
+**小鲸鱼不会丢**：开机自启代理覆盖“开机”一环；此外每次 ZCode 会话启动时钩子都会检查挂件是否在跑，被误杀/崩溃也会自动拉起（互斥量保证不会重复开窗）。
+
+**The whale does not get lost**: the autostart proxy covers machine boot, and every ZCode session start checks whether the widget is running, re-launching it if it was killed or crashed (a named mutex prevents duplicate windows).
+
 ## 使用 / Usage
 
 - 挂件生命周期跟随 ZCode 桌面端：ZCode 打开时出现在其窗口右下角，关闭/最小化约 3 秒后隐藏；ZCode 回来就跟着回来。ZCode 不在场时保持隐藏（进程常驻待命）。
