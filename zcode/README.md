@@ -4,9 +4,9 @@
 
 Give ZCode a messenger whale — while a long task is running, click the whale to slip in an extra instruction. No interruption, no waiting.
 
-本项目是 [whale-whisper](https://github.com/Elysia-laoda/whale-whisper)（WorkBuddy 版）的 ZCode 移植版：桌面悬浮挂件与钩子注入机制相同，会话枚举与钩子注册改为对接 ZCode 的配置与数据库。上游的"对话内挂件"（MCP App 卡片）依赖宿主渲染 MCP Apps，ZCode CLI 不支持，故未移植。
+本目录是 [whale-whisper](https://github.com/Elysia-laoda/whale-whisper) 仓库的 **ZCode 宿主实现**（该仓库同时提供 WorkBuddy 与 DSH 两版，对照表见[仓库根 README](../README.md)）：桌面悬浮挂件与钩子注入机制与 WorkBuddy 版相同，会话枚举与钩子注册改为对接 ZCode 的配置与数据库。WorkBuddy 版的"对话内挂件"（MCP App 卡片）依赖宿主渲染 MCP Apps，ZCode CLI 不支持，故未移植。
 
-This is a ZCode port of [whale-whisper](https://github.com/Elysia-laoda/whale-whisper) (the WorkBuddy edition). The desktop overlay and the hook-injection mechanism are the same; session enumeration and hook registration are adapted to ZCode's config and database. The upstream "in-conversation widget" (an MCP App card) relies on the host rendering MCP Apps, which the ZCode CLI does not support, so it is not ported.
+This directory is the **ZCode host implementation** of the [whale-whisper](https://github.com/Elysia-laoda/whale-whisper) repository, which also ships the WorkBuddy and DSH editions (see the [repository README](../README.md) for the comparison). The desktop overlay and the hook-injection mechanism match the WorkBuddy edition; session enumeration and hook registration are adapted to ZCode's config and database. The WorkBuddy edition's "in-conversation widget" (an MCP App card) relies on the host rendering MCP Apps, which the ZCode CLI does not support, so it is not ported.
 
 ## 它解决什么问题 / What problem it solves
 

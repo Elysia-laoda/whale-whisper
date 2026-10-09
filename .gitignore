@@ -1,5 +1,7 @@
 # 依赖（npm install 重新安装即可）
 mcp-server/node_modules/
+dsh/node_modules/
+dsh/e2e/out/
 
 # Python 缓存
 __pycache__/

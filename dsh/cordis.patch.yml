@@ -1,0 +1,10 @@
+# dsh-whisper-whale — profile patch layer.
+#
+# Inserts exactly one cordis loader entry for this package. The host half
+# (lib/index.js) registers the local HTTP routes and the agent interception
+# points; the browser half (lib/client.js) is picked up automatically by
+# dsh-client-modules through this package's `dsh.client` declaration, exactly
+# like the shipped ui-* packages. No config is required.
+- insert:
+    - id: whisper-whale
+      name: 'dsh-whisper-whale'

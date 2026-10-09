@@ -1,0 +1,75 @@
+{
+  "name": "dsh-whisper-whale",
+  "version": "0.1.0",
+  "description": "DSH 版「补充提示挂件」：对话窗口右下角常驻一只小鲸鱼，任务跑到一半想补一句话，点它一下，AI 立刻停下来问你「有什么要补充的吗？」——不打断、不等候。Whisper to your running DSH agent: click the resident whale and the agent asks what you want to add before continuing.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/copy.js",
+    "lib/whale-state.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "skills",
+    "scripts",
+    "e2e",
+    "README.md",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "dsh-web",
+    "whisper-whale",
+    "supplement-widget",
+    "steering",
+    "mid-task-hint",
+    "补充提示挂件",
+    "小鲸鱼",
+    "挂件",
+    "打断",
+    "补充提示"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "node --test --test-force-exit \"tests/*.test.mjs\"",
+    "e2e": "node e2e/run.mjs",
+    "check": "node --check lib/index.js && node --check lib/client.js && node --check lib/copy.js && node --check lib/whale-state.js",
+    "install-plugin": "node scripts/install.mjs",
+    "uninstall-plugin": "node scripts/uninstall.mjs",
+    "preview": "node e2e/widget-preview.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.2"
+  },
+  "icon": "./icon.svg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Elysia-laoda/whale-whisper.git",
+    "directory": "dsh"
+  },
+  "homepage": "https://github.com/Elysia-laoda/whale-whisper/tree/main/dsh",
+  "bugs": {
+    "url": "https://github.com/Elysia-laoda/whale-whisper/issues"
+  },
+  "author": "Elysia-laoda"
+}
