@@ -4,7 +4,7 @@
 
 > 🐋 **Whisper to your running AI.** Slip an extra instruction to an agent that is already working — one click and the AI pauses to ask "anything to add?", without interrupting the run and without making you wait for it to finish.
 
-[![Hosts](https://img.shields.io/badge/hosts-WorkBuddy%20%C2%B7%20ZCode%20%C2%B7%20DSH-2f7de1)](#三个宿主--three-hosts) [![MCP Apps](https://img.shields.io/badge/MCP-Apps-8a63d2)](#workbuddy) [![PySide6](https://img.shields.io/badge/UI-PySide6-41cd52)](#workbuddy) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-6b7280)](#workbuddy) [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE)
+[![Hosts](https://img.shields.io/badge/hosts-WorkBuddy%20%C2%B7%20ZCode%20%C2%B7%20DSH%20%C2%B7%20RikkaHub-2f7de1)](#四个宿主--four-hosts) [![MCP Apps](https://img.shields.io/badge/MCP-Apps-8a63d2)](#workbuddy) [![PySide6](https://img.shields.io/badge/UI-PySide6-41cd52)](#workbuddy) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-6b7280)](#workbuddy) [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE)
 
 一只常驻的小鲸鱼 🐋（可拖动、可换位置、位置自动记忆）。
 任务跑得正欢时你突然想到一句要补充的话？**点一下它，AI 立刻停下来问你：「有什么要补充的吗？」**
@@ -14,29 +14,31 @@ A resident whale 🐋 — draggable, rememberable, always at hand.
 Halfway through a long task you remember one more requirement: **click it and the AI immediately stops to ask "anything to add?"**
 No need to interrupt the run, and no need to wait for it to finish.
 
-同一个交互在三个宿主上各有一份原生实现，共享同一套设计约定与中文文案。本仓库同时是三份实现的源码。
+同一个交互在四个宿主上各有一份原生实现，共享同一套设计约定与中文文案。本仓库同时是四份实现的源码。
 
-The same interaction ships as a native implementation for three hosts, sharing one design contract and one set of Chinese copy. This repository is the source of all three.
+The same interaction ships as a native implementation for four hosts, sharing one design contract and one set of Chinese copy. This repository is the source of all four.
 
 ![DSH 挂件](dsh/docs/widget-dark.png)
 
-## 三个宿主 / Three hosts
+## 四个宿主 / Four hosts
 
 | 宿主 | 挂件形态 | 接入方式 | 目录 | 详细文档 |
 | --- | --- | --- | --- | --- |
 | **WorkBuddy**（原始） | PySide6 桌面悬浮窗；另有对话内 MCP App 卡片 | 4 个外部钩子进程 | `overlay/``mcp-server/``hooks/` | [本页](#workbuddy) |
 | **ZCode** | PySide6 桌面悬浮窗，跟随 ZCode 窗口 | 5 个外部钩子进程（含硬强制） | `zcode/` | [`zcode/README.md`](zcode/README.md) |
 | **DSH** | DSH 对话界面内常驻挂件（原生 DOM） | 进程内原生 cordis 插件 | `dsh/` | [`dsh/README.md`](dsh/README.md) |
+| **RikkaHub**（Android） | 系统悬浮窗（浮在所有应用之上，原生 View） | 进程内前台服务 + 生成循环边界回调 | `rikka/` | [`rikka/README.md`](rikka/README.md) |
 
 | Host | Widget | Wiring | Directory | Docs |
 | --- | --- | --- | --- | --- |
 | **WorkBuddy** (original) | PySide6 desktop overlay; plus an in-conversation MCP App card | 4 external hook processes | `overlay/``mcp-server/``hooks/` | [this page](#workbuddy) |
 | **ZCode** | PySide6 desktop overlay following the ZCode window | 5 external hook processes (with hard enforcement) | `zcode/` | [`zcode/README.md`](zcode/README.md) |
 | **DSH** | resident in-page widget inside the DSH conversation window (plain DOM) | native in-process cordis plugin | `dsh/` | [`dsh/README.md`](dsh/README.md) |
+| **RikkaHub** (Android) | system overlay above every app (native View) | in-process foreground service + a generation-loop boundary callback | `rikka/` | [`rikka/README.md`](rikka/README.md) |
 
-三份实现共用同一条链路与同一套文案，差别只在"钩子挂在哪里、会话从哪里枚举"。DSH 版把外部进程换成了进程内插件，因此不需要 Python，也不写状态文件。
+四份实现共用同一条链路与同一套文案，差别只在"钩子挂在哪里、会话从哪里枚举"。DSH 版把外部进程换成了进程内插件，因此不需要 Python，也不写状态文件；RikkaHub 版把它搬到了 Android 上——悬浮在所有应用之上，点击后用进程内的标志位在**下一个模型请求之前**注入那句提醒。
 
-All three share one pipeline and one set of copy; they differ only in where hooks are registered and where the session list comes from. The DSH edition replaces the external processes with an in-process plugin, so it needs no Python and writes no state files.
+All four share one pipeline and one set of copy; they differ only in where hooks are registered and where the session list comes from. The DSH edition replaces the external processes with an in-process plugin, so it needs no Python and writes no state files; the RikkaHub edition carries the same idea to Android — an overlay above every app, whose tap sets an in-process flag consumed right before the next model request.
 
 ## 它解决什么问题 / What problem it solves
 

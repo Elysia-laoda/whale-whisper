@@ -1,0 +1,1253 @@
+From 68c24fb1312fbadb99f69de1d1c5cdf6e47f310c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=87=AF=E6=96=87?= <2709674196@qq.com>
+Date: Fri, 9 Oct 2026 21:43:41 +0800
+Subject: [PATCH] feat: ship the WorkBuddy reference library and the
+ whisper-whale widget (2.6.2-mod)
+
+Library: assets/wb-library (curated 01-06 + 10 partitions) seeded to files/wb-library by WbLibrarySeeder, keyed on BuildConfig.VERSION_CODE; four bundled reference skills (wb-design-verification, wb-prompt-patterns, wb-imagegen-discipline, wb-library) plus whale-whisper are seeded from assets/default-skills and additively enabled on every assistant once.
+
+Widget: WhaleOverlayService (SYSTEM_ALERT_WINDOW overlay, draggable + remembered, long-press menu) dispatches a whisper request into a generating conversation; ChatService consumes it at the next model-request boundary of GenerationLoop and appends one user instruction telling the agent to ask its single question.
+---
+ app/build.gradle.kts                          |  11 +-
+ app/src/main/AndroidManifest.xml              |  11 +
+ .../wb-design-verification/SKILL.md           |  41 ++
+ .../wb-imagegen-discipline/SKILL.md           |  32 ++
+ .../assets/default-skills/wb-library/SKILL.md |  37 ++
+ .../wb-prompt-patterns/SKILL.md               |  40 ++
+ .../default-skills/whale-whisper/SKILL.md     |  24 +
+ .../java/me/rerere/rikkahub/RikkaHubApp.kt    |  59 +++
+ .../rerere/rikkahub/data/ai/GenerationLoop.kt |   5 +-
+ .../rikkahub/data/files/SkillManager.kt       |  35 ++
+ .../rikkahub/data/files/WbLibrarySeeder.kt    | 101 ++++
+ .../me/rerere/rikkahub/service/ChatService.kt |  37 +-
+ .../rikkahub/whale/WhaleOverlayService.kt     | 453 ++++++++++++++++++
+ .../me/rerere/rikkahub/whale/WhaleStore.kt    |  94 ++++
+ app/src/main/res/drawable/ic_whale.xml        |  66 +++
+ 15 files changed, 1039 insertions(+), 7 deletions(-)
+ create mode 100644 app/src/main/assets/default-skills/wb-design-verification/SKILL.md
+ create mode 100644 app/src/main/assets/default-skills/wb-imagegen-discipline/SKILL.md
+ create mode 100644 app/src/main/assets/default-skills/wb-library/SKILL.md
+ create mode 100644 app/src/main/assets/default-skills/wb-prompt-patterns/SKILL.md
+ create mode 100644 app/src/main/assets/default-skills/whale-whisper/SKILL.md
+ create mode 100644 app/src/main/java/me/rerere/rikkahub/data/files/WbLibrarySeeder.kt
+ create mode 100644 app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt
+ create mode 100644 app/src/main/java/me/rerere/rikkahub/whale/WhaleStore.kt
+ create mode 100644 app/src/main/res/drawable/ic_whale.xml
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 44625e55..2c7f6a79 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -19,15 +19,18 @@ android {
+         applicationId = "excp.rikkahub"
+         minSdk = 26
+         targetSdk = 37
+-        versionCode = 188
++        versionCode = 189
+         // "-mod" marks the zero-friction build: the version code sits above every upstream
+         // release this fork is based on, so an in-place upgrade from the stock app still
+         // compares correctly, while the About screen and the APK filename say which build is
+         // installed. 2.6.0-mod added the external-access surface (MCP server, ACI controlled
+-        // endpoint) and the on-device APK build chain; 2.6.1-mod merges upstream
++        // endpoint) and the on-device APK build chain; 2.6.1-mod merged upstream
+         // v2.5.1-agent.1 (OpenRouter Images API, Shizuku bind-timeout retry, prompt-cache,
+-        // streamed-image and stop-during-tool-call fixes).
+-        versionName = "2.6.1-mod"
++        // streamed-image and stop-during-tool-call fixes); 2.6.2-mod ships the WorkBuddy
++        // reference library as app assets (seeded to files/wb-library) with four bundled
++        // reference skills, and the whisper-whale widget (resident overlay + generation-loop
++        // supplement injection).
++        versionName = "2.6.2-mod"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+ 
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index ca2c4c74..8dd73663 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -420,6 +420,17 @@
+         android:value="local MCP server exposing the agent to other clients" />
+     </service>
+ 
++    <!-- Whisper-whale widget: a resident overlay above every app. Tapping it makes the
++         running agent ask 「有什么要补充的吗？」 at its next action boundary. -->
++    <service
++      android:name=".whale.WhaleOverlayService"
++      android:exported="false"
++      android:foregroundServiceType="specialUse">
++      <property
++        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
++        android:value="resident whisper widget overlay" />
++    </service>
++
+     <!-- ACI controlled endpoint. android:permission references the controller's
+          permission as the first gate; AciCallerPolicy is the second, and it is what
+          honours the on/off switch in Settings. -->
+diff --git a/app/src/main/assets/default-skills/wb-design-verification/SKILL.md b/app/src/main/assets/default-skills/wb-design-verification/SKILL.md
+new file mode 100644
+index 00000000..1e3c5c61
+--- /dev/null
++++ b/app/src/main/assets/default-skills/wb-design-verification/SKILL.md
+@@ -0,0 +1,41 @@
++---
++name: wb-design-verification
++description: 分层视觉验证纪律（源自 WorkBuddy ardot 设计闭环）——做 UI/HTML/画布/图表等视觉产出时，如何用最少的验证成本保证视觉质量：默认廉价结构校验、截图作为稀缺资源限量使用、T1-T5 分级、收敛阈值、修复合批
++---
++
++# 分层视觉验证纪律
++
++做任何视觉产出（页面、画布、图表、幻灯片、海报）时，按本纪律组织验证，避免两个极端：完全不验证就把半成品丢给用户，或每改一小步就全量截图烧上下文。
++
++## 核心原则
++
++1. **默认用廉价的结构化校验，不用截图。** 结构化校验 = 重新读一遍产出物的结构化状态（DOM、JSON、几何数据、程序化像素检查），便宜、确定、可断言。截图（或任何"看图"）是稀缺资源，只在视觉层问题上有价值。
++2. **"保存了文件"不等于"验证过"。** 任何验证都必须真的读取并分析返回的内容，而不是"调用过了"就算数。
++3. **问题当场修，不丢给用户。** 验证发现的缺陷属于执行的一部分，修完才算完成。
++4. **修复合批。** 攒齐本轮发现的所有问题，一次修改全部解决，然后按同一层复验一次——不要修一个验一个。
++5. **验证循环必须会终止。**
++
++## 分级（每批修改选择对应强度）
++
++| 批次类型 | 改了什么 | 验证强度 |
++|---|---|---|
++| T1 结构骨架 | 新增容器、布局模式、层级 | 只做结构校验（截图此时没用） |
++| T2 内容填充 | 文本、数据、组件属性 | 跳过，推迟到下一批一起验 |
++| T3 视觉样式 | 颜色、字体、阴影、圆角 | 截图（或结构校验兜底） |
++| T4 整段完成 | 一个逻辑区块（hero/卡片组/页脚）完成 | 截图 + 结构校验各一次 |
++| T5 整页交付 | 所有区块合并 | 最终整页截图一次 |
++
++经验法则：连续两批都是 T2/T3，只在第二批结束时验一次；大于 2000px 的长页面分段截图。
++
++## 收敛阈值（何时停止）
++
++- 每个区块**最多 2 轮修复**。第 3 轮开始前必须停下：换实现思路，或如实报告未解决项，绝不把未完成当完成交付。
++- 忽略修饰性噪音：≤4px 间距差、<1px 对齐偏移、装饰元素的无关紧要溢出。
++- 区块已符合样式规范且无结构问题后，**禁止**再截图"再确认一下"或找美学茬——发布。
++- 结构校验干净但截图可见的语义缺陷仍然算数；两者都不支持的问题不许凭空发明。
++
++## 在本机的适配
++
++当前模型不支持图像输入时，"看图"环节替换为程序化等价物：像素统计（色彩分布/留白率）、OCR 提取文字回读、几何断言（元素包围盒关系）。本机可用 `take_screenshot` + `show_image` 把画面交给人看，但**自己不要声称看过图**。判据不变：默认程序化校验，"视觉层"校验限量、分级、当场修、有收敛阈值。
++
++完整原文（WorkBuddy 的 24KB design-rules）：`files/wb-library/03-skills-builtin/builtin-plugins/ardot/skills/ardot-design-core/rules/design-rules.md`
+diff --git a/app/src/main/assets/default-skills/wb-imagegen-discipline/SKILL.md b/app/src/main/assets/default-skills/wb-imagegen-discipline/SKILL.md
+new file mode 100644
+index 00000000..40435e42
+--- /dev/null
++++ b/app/src/main/assets/default-skills/wb-imagegen-discipline/SKILL.md
+@@ -0,0 +1,32 @@
++---
++name: wb-imagegen-discipline
++description: 图像生成提示词纪律（提炼自 WorkBuddy miora 技能层）——调用任何文生图/图生图/视频生成工具前如何构建提示词：增强不改意图、参考图只说改动、图上禁规格文字、系列一致性锚点
++---
++
++# 图像生成提示词纪律
++
++调用任何图像生成工具（云端 API / 本地模型 / 本 App 的图像与视频生成入口）出图前，按此纪律构建最终提示词。
++
++## Prompt 构建
++
++- **增强，但不改变用户意图。** 含糊的需求沿用户未指定的维度补全：主体、动作/状态、环境场景、视觉风格、光线与构图、色彩与氛围、渲染细节。
++- **用户示意"就用我的原话"（任何语言）→ 逐字透传，禁止扩写。**
++- 增强会改动用户明确固定的核心属性（主体、颜色、数量、性别、品种、文案）→ 不要自行决定，把顾虑说出来让用户定。
++- **带参考图时只描述"改什么"**，不重新描述整个画面——参考图已承载画面信息，重复描述反而干扰。例："保持主体不变，改成油画风格"。
++
++## 图上文字
++
++- 需要渲染指定文字时：内容、语言、标点、大小写**完全不变**；文字要短、间距充裕、高对比，细密小字必然糊掉。
++- **绝不把规格画进画面**：色值代码、字体名、字段标签词（"标题""副标题"）、尺寸标注、网格线、安全区参考线、结构说明、提示词片段——一个都不能出现。只有面向观看者的文案可以出现在图上。
++
++## 系列一致性
++
++- 多张图要读起来是一套（同一主体反复出现、统一风格）时，为整套图建立一致性锚点（同一主体描述、同一风格词组、同一色板），当成一个系列做，而不是独立的多张。这是最常犯的错。
++
++## 场景区分（判错整套就废）
++
++- 电商详情图 ≠ 轮播主图 ≠ listing 文案（详情图是 below-the-fold 的模块叙事）。
++- App 图标（方形单焦点、给系统用）≠ Logo（品牌标志）≠ UI 图标集（成套小尺寸功能图标）。
++- 带品牌标识、要跟品牌资产一致的 → 品牌层任务，先做品牌规范再产物料。
++
++完整原文（含比例尺寸映射表）：`files/wb-library/03-skills-builtin/skills/miora-image-generation/SKILL.md`（配套 `miora-creative-core`、`miora-brand-design` 同目录）
+diff --git a/app/src/main/assets/default-skills/wb-library/SKILL.md b/app/src/main/assets/default-skills/wb-library/SKILL.md
+new file mode 100644
+index 00000000..16367a6d
+--- /dev/null
++++ b/app/src/main/assets/default-skills/wb-library/SKILL.md
+@@ -0,0 +1,37 @@
++---
++name: wb-library
++description: WorkBuddy 借鉴库（随 App 内置、离线可查）导航——库在设备上的位置、随包分区地图、按什么顺序检索、以及"只借思路不搬文本"的使用边界
++---
++
++# WorkBuddy 借鉴库（本机内置）
++
++腾讯 WorkBuddy 5.7.6 的解包与提炼成果，**随本 App 一起装在设备上，离线可查**。
++
++## 位置
++
++- 库根：`/data/data/excp.rikkahub/files/wb-library/`（本 App 私有目录，文件工具可直接读；用 `list_files` 列目录、`read_file` 读正文）
++- 先读导览：`00-README.md`
++
++## 随包分区地图
++
++| 分区 | 内容 | 什么时候看 |
++|---|---|---|
++| `01-prompts-desktop/` | 桌面端各模式系统提示词模板（.tpl，含 {% %} 占位符） | 要抄提示词结构、写系统提示词时 |
++| `02-prompts-fragments/` | 提示词碎片与模式拼装（craft/expert/plan、公共记忆碎片） | 想知道完整提示词怎么拼出来 |
++| `03-skills-builtin/` | 内置技能库全文：ardot 设计全家桶（含 24KB design-rules）、miora 图像/视频、sites 建站、pptx/docx 等 | **做视觉/设计/文档产出前的规范来源** |
++| `04-prompts-cli/` | CLI 内核 123 条内联提示词（19.6KB 主提示词 + 63 条工具描述全文） | 写工具描述、写子代理任务书、命令安全审查 |
++| `05-agents/` | 19 个内部 agent 定义（Explore/Plan/compact/会话标题…） | 设计多 agent 分工 |
++| `06-tools/` | 工具注册表、特性开关、模型清单、技能市场 | 想知道一个成熟产品怎么组织工具面 |
++| `10-experts/` | 专家策展清单（100+ 专家分组结构） | 设计专家/人格体系 |
++
++**不随包的部分**：`07-config/`（产品五部署形态配置）、`08-cli-internals/`（CLI 打包产物）、`09-user-plugins/`（12k 文件的市场缓存）留在 PC 侧的完整库里，需要时再取（`workbuddy-analysis/library/`）。
++
++## 检索手法
++
++- 先用 `list_files` 看分区目录树，再 `read_file` 精读；单文件读取上限 512KB。
++- 关键词**先用英文原词**：技能名、工具名、内部代号在库里都是英文（如 `design-rules`、`widget_guidelines`、`final_answer`、`Defer`）。
++- 库很大，**不要试图通读**；按上表的"什么时候看"定点取用。
++
++## 使用边界
++
++- 这里的文本是**他方产品的内部资产**：只作参考与思路借鉴，产出要用自己的话重写，不要整段搬运；不要对外分发库内容。
+diff --git a/app/src/main/assets/default-skills/wb-prompt-patterns/SKILL.md b/app/src/main/assets/default-skills/wb-prompt-patterns/SKILL.md
+new file mode 100644
+index 00000000..38612988
+--- /dev/null
++++ b/app/src/main/assets/default-skills/wb-prompt-patterns/SKILL.md
+@@ -0,0 +1,40 @@
++---
++name: wb-prompt-patterns
++description: WorkBuddy 提示词工程模式提炼——为 agent 写系统提示词/技能时的可复用模式：不暴露机制、规范触发、final answer 自包含、按模型分级能力上限、Defer 工具延迟加载、fragments 拼装
++---
++
++# Agent 提示词工程模式（提炼自 WorkBuddy）
++
++为 agent（包括自己被复用的场景）写系统提示词或技能时，以下模式被验证有效。
++
++## 话术纪律
++
++- **Never expose machinery（不暴露机制）。** 明文禁止模型用"我没有 XX 功能"的话术；能力缺口一律走能落地的替代路径直接交付（例如"不能生成图片"→直接用 SVG/HTML 画）。同时禁止向用户复述工具名、内部阶段名、文件格式名。
++- **final answer 自包含。** 明确告知模型：中间工具调用在 UI 里被折叠，用户看不见；因此最终回复必须独立成立——重述关键结果、命令输出要点、改动文件、错误与风险，长度上限 50-70 行。
++- **输出格式硬约束**（视觉/设计类任务）：三段式（开场理解 · 过程要点 · 收尾邀请反馈），禁止逐步骤流水账、禁止把工具日志当过程描述。
++
++## 触发器工程（可视化/工具的何时使用）
++
++- 显式触发：用户说出"画/展示/可视化"类动词。
++- 主动触发：教学讲解、数据对比、架构讨论——画面比文字更有效时，无需用户要求。
++- **规范触发**：用户说出的名词本身是视觉物（"对比表""时间线""登录页 mockup"），即使没有任何"画"字动词，也直接渲染产出，而不是给文字描述。
++- 多图输出时图与图之间必须有承接的文字段落。
++
++## 能力校准
++
++- **按模型分级设能力上限**（上限不是目标）：强模型允许复杂交互/D3/Three.js，中档模型限标准图表与干净 SVG，弱模型只做简单静态图。同一段提示词服务多模型时必须写这条。
++- 主提示词只放骨架，领域规则按需加载（fetch_guidelines 模式）：先让模型调用"加载规范"工具拿到该类产物的权威约束，再动手。
++
++## 结构工程
++
++- **Defer 工具 + ToolSearch**：不常用的工具在清单里只占名字（Defer(ImageGen)），模型用 ToolSearch 搜索到后才展开完整 schema——工具数量与上下文成本解耦。
++- **Fragments 拼装**：系统提示词 = 模板（{% if %} 条件 + {{ 占位符 }}）+ 模式 fragments（每模式一个目录，frontmatter 声明该模式的工具白名单）+ 公共 fragments（记忆、安全、语言）。改某模式行为只动那个 fragment。
++- **错误模式速查表**：把 API 的坑写成三列表格（错误写法 → 正确写法 → 备注），比描述性规则有效得多；配合"禁止模式"清单（如 emoji 禁当图标）。
++- **安全规则分层**：内容策略 / 个人文件保护（扫描=只读、模糊=先问、回收站而非删除、每批≤10 文件）/ 命令安全（禁 shell 套壳、破坏性命令失败后禁换姿势重试）分开成块，互不稀释。
++- 本地化细节写进提示词（区域惯例、货币、颜色惯例），不要指望模型自己知道。
++
++## 原文索引（本机内置库）
++
++- 模板与拼装实例：`files/wb-library/01-prompts-desktop/`、`files/wb-library/02-prompts-fragments/`
++- CLI 内核 123 条提示词（含 19.6KB 主提示词与全部工具描述）：`files/wb-library/04-prompts-cli/`
++- 内部 agent 定义：`files/wb-library/05-agents/agents.json`
+diff --git a/app/src/main/assets/default-skills/whale-whisper/SKILL.md b/app/src/main/assets/default-skills/whale-whisper/SKILL.md
+new file mode 100644
+index 00000000..674a6a83
+--- /dev/null
++++ b/app/src/main/assets/default-skills/whale-whisper/SKILL.md
+@@ -0,0 +1,24 @@
++---
++name: whale-whisper
++description: 补充提示挂件（小鲸鱼）——用户在任务运行中点了一下常驻小鲸鱼时，你会收到一条「【补充提示挂件】」用户消息；这条技能说明该怎么处理它：立刻只问一个问题「有什么要补充的吗？」，把回答纳入计划再说一句调整，只处理一次
++---
++
++# 补充提示挂件（whisper-whale）
++
++本 App 常驻一只可拖动的小鲸鱼（右下角悬浮）。**任务跑得正欢时，用户不用打断你，点一下它就能补一句话。**
++
++## 你什么时候会看到它
++
++对话里会出现一条用户消息，以 `【补充提示挂件】` 开头。它不是你臆想出来的，是用户真的点了挂件。
++
++## 收到就照做（四步）
++
++1. **立刻处理，不要等任务做完、不要攒到收尾。** 这条消息的整个意义就是"在下一个动作边界停下来听我说"。
++2. 调用 `ask_user`，**只问一个问题**：「有什么要补充的吗？」。header 用「补充提示」，**不要给选项**（留空让用户自由输入）。
++3. 拿到回答后，把补充内容纳入当前计划，**继续原来的任务**；并用一句话说明你据此调整了什么。
++4. **同一次点击只处理一次。** 用户跳过或没回答，就按原计划继续，不要反复追问、不要重复弹同一个问题。
++
++## 边界
++
++- 用户说「关掉挂件」→ 本次对话不再理会该提醒（照常完成当前任务即可）。
++- 挂件只是"递话"的通道：补充内容本身仍然服从你已有的安全与验证纪律。
+diff --git a/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt b/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt
+index 67c1b43f..2793e63b 100644
+--- a/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt
++++ b/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt
+@@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineName
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import me.rerere.rikkahub.data.files.FileFolders
++import me.rerere.rikkahub.data.files.WbLibrarySeeder
++import me.rerere.rikkahub.whale.WhaleOverlayService
++import me.rerere.rikkahub.whale.WhaleStore
+ import java.io.File
+ import kotlinx.coroutines.SupervisorJob
+ import kotlinx.coroutines.cancel
+@@ -124,6 +127,9 @@ class RikkaHubApp : Application() {
+         // Start the local MCP server if enabled in settings
+         startMcpServerIfEnabled()
+ 
++        // Bring back the whisper-whale overlay when the user left it on
++        startWhaleOverlayIfEnabled()
++
+         // Eagerly construct ChatService on the main thread. Its constructor calls
+         // LifecycleRegistry.addObserver which throws if it runs off-main, and the Telegram
+         // bot service runs on Dispatchers.IO — without this priming, the first inbound bot
+@@ -155,6 +161,11 @@ class RikkaHubApp : Application() {
+         // is a one-time install — user edits / deletes are respected on subsequent launches.
+         seedDefaultSkillsIfNeeded()
+ 
++        // Unpack the bundled WorkBuddy reference library (assets/wb-library/*) into
++        // /data/data/<pkg>/files/wb-library/ so the agent can read it offline with ordinary
++        // file tools. Keyed on versionCode: refreshed once per APK upgrade.
++        seedWbLibraryIfNeeded()
++
+         // Apply the app's permissions over Shizuku's shell UID so a tool call never has to
+         // interrupt the conversation to ask for one. No-op unless Shizuku is already running
+         // and RikkaHub holds its permission: this must never trigger Shizuku's own consent
+@@ -467,6 +478,54 @@ class RikkaHubApp : Application() {
+         }
+     }
+ 
++    /**
++     * Unpack the assets/wb-library tree into the app's private files dir (see
++     * [WbLibrarySeeder]).
++     * Skipped when the on-disk marker already matches this build's versionCode.
++     */
++    /**
++     * Brings the whisper-whale overlay back after a restart when the user left it on. Same
++     * gates as the MCP server: the overlay needs SYSTEM_ALERT_WINDOW, and the foreground
++     * service needs the notification permission on API 33+.
++     */
++    private fun startWhaleOverlayIfEnabled() {
++        get<AppScope>().launch {
++            runCatching {
++                delay(1200)
++                if (!WhaleStore.isEnabled(this@RikkaHubApp)) return@launch
++                if (!WhaleOverlayService.canDraw(this@RikkaHubApp)) {
++                    Log.w(TAG, "startWhaleOverlayIfEnabled: overlay permission not granted, skipping")
++                    return@launch
++                }
++                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
++                    ContextCompat.checkSelfPermission(
++                        this@RikkaHubApp,
++                        android.Manifest.permission.POST_NOTIFICATIONS
++                    ) != PackageManager.PERMISSION_GRANTED
++                ) {
++                    Log.w(TAG, "startWhaleOverlayIfEnabled: notification permission not granted, skipping")
++                    return@launch
++                }
++                WhaleOverlayService.start(this@RikkaHubApp)
++            }.onFailure {
++                Log.e(TAG, "startWhaleOverlayIfEnabled failed", it)
++            }
++        }
++    }
++
++    private fun seedWbLibraryIfNeeded() {
++        get<AppScope>().launch(Dispatchers.IO) {
++            runCatching {
++                WbLibrarySeeder.seedIfNeeded(
++                    context = this@RikkaHubApp,
++                    version = BuildConfig.VERSION_CODE,
++                )
++            }.onFailure {
++                Log.e(TAG, "seedWbLibraryIfNeeded failed", it)
++            }
++        }
++    }
++
+     private fun checkWorkspaceIntegrity() {
+         get<AppScope>().launch(Dispatchers.IO) {
+             runCatching {
+diff --git a/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt b/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt
+index 03b39449..b647e18d 100644
+--- a/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt
++++ b/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt
+@@ -485,7 +485,7 @@ class GenerationLoop(
+         // Called immediately before every model request, including the request after a tool
+         // result. ChatService uses this to reassert the foreground service before a background
+         // continuation opens a new socket.
+-        onBeforeModelRequest: suspend () -> Unit = {},
++        onBeforeModelRequest: suspend (List<UIMessage>) -> List<UIMessage>? = { null },
+         // Returns true when the user has pre-approved [toolName] for this turn (e.g.
+         // "Allow for this chat" or "Always Allow" granted earlier). When true, the loop
+         // below skips the Pending flip and lets the tool execute. ChatService injects the
+@@ -601,7 +601,8 @@ class GenerationLoop(
+             // Skip generation if we have approved/denied tool calls to handle
+             if (pendingTools.isEmpty()) {
+                 try {
+-                    onBeforeModelRequest()
++                    // Hosts may inject a message at this boundary (the whisper widget does).
++                    onBeforeModelRequest(messages)?.let { injected -> messages = injected }
+                     generateInternal(
+                         assistant = assistant,
+                         settings = settings,
+diff --git a/app/src/main/java/me/rerere/rikkahub/data/files/SkillManager.kt b/app/src/main/java/me/rerere/rikkahub/data/files/SkillManager.kt
+index 7f464fa8..cae2f05d 100644
+--- a/app/src/main/java/me/rerere/rikkahub/data/files/SkillManager.kt
++++ b/app/src/main/java/me/rerere/rikkahub/data/files/SkillManager.kt
+@@ -401,6 +401,41 @@ class SkillManager(
+                 Log.w(TAG, "seedDefaultSkillsIfNeeded: failed to seed $skillName", e)
+             }
+         }
++
++        // The WorkBuddy reference skills ship with the library assets (see [WbLibrarySeeder]).
++        // Enable them for every assistant once — including user-created ones, which the
++        // DEFAULT_AUTO_ENABLED_SKILLS passthrough in PreferencesStore does not cover — so
++        // `use_skill` reaches them without a manual toggle. The bookkeeping rides on
++        // autoEnabledDefaultSkills, so a skill the user later turns off stays off.
++        enableBundledSkillsOnce(WbLibrarySeeder.BUNDLED_SKILL_NAMES)
++    }
++
++    /**
++     * Additively enable [names] on every assistant exactly once. Names that are not on disk
++     * are skipped (they would be pruned again as orphans), as are names an earlier launch
++     * already handled.
++     */
++    private suspend fun enableBundledSkillsOnce(names: Set<String>) {
++        if (names.isEmpty()) return
++        val onDisk = listSkills().mapTo(HashSet()) { it.name }
++        val alreadyHandled = runCatching {
++            settingsStore.settingsFlow.first { !it.init }.autoEnabledDefaultSkills
++        }.getOrDefault(emptySet())
++        val toAdd = names.intersect(onDisk) - alreadyHandled
++        if (toAdd.isEmpty()) return
++        runCatching {
++            settingsStore.update { settings ->
++                settings.copy(
++                    assistants = settings.assistants.map { assistant ->
++                        assistant.copy(enabledSkills = assistant.enabledSkills + toAdd)
++                    },
++                    autoEnabledDefaultSkills = settings.autoEnabledDefaultSkills + toAdd,
++                )
++            }
++            Log.i(TAG, "enableBundledSkillsOnce: enabled $toAdd for every assistant")
++        }.onFailure {
++            Log.w(TAG, "enableBundledSkillsOnce: failed to enable $toAdd", it)
++        }
+     }
+ 
+     /**
+diff --git a/app/src/main/java/me/rerere/rikkahub/data/files/WbLibrarySeeder.kt b/app/src/main/java/me/rerere/rikkahub/data/files/WbLibrarySeeder.kt
+new file mode 100644
+index 00000000..2a8ef229
+--- /dev/null
++++ b/app/src/main/java/me/rerere/rikkahub/data/files/WbLibrarySeeder.kt
+@@ -0,0 +1,101 @@
++package me.rerere.rikkahub.data.files
++
++import android.content.Context
++import android.util.Log
++import java.io.File
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++
++/**
++ * Seeds the bundled WorkBuddy reference library (`assets/wb-library/`) into the app's
++ * private storage so the on-device agent can read it offline with ordinary file tools.
++ *
++ * The library is a teardown of Tencent WorkBuddy 5.7.6 (prompt templates, built-in skills,
++ * CLI prompts, agent definitions, tool registry, expert list) kept as a private reference
++ * for a self-use fork. It is NOT loaded into any prompt by itself — the wb-* skills tell
++ * the agent where it is and when to look.
++ *
++ * Layout:
++ *   assets/wb-library/<partition>/...   -> /data/data/<pkg>/files/wb-library/<partition>/...
++ *
++ * Re-copying is keyed on the app's versionCode: every APK upgrade refreshes the tree once,
++ * then the marker short-circuits later launches. The copy runs off the main thread and is
++ * best-effort — a failure only means the agent sees the previous revision.
++ */
++object WbLibrarySeeder {
++    private const val TAG = "WbLibrarySeeder"
++
++    /** Asset subtree that ships with the APK. */
++    const val ASSET_ROOT = "wb-library"
++
++    /** Directory name under the app's private files dir. */
++    const val DIR_NAME = "wb-library"
++
++    private const val VERSION_MARKER = ".asset-version"
++
++    /**
++     * Bundled skills this fork ships and auto-enables once per assistant: the four WorkBuddy
++     * reference skills that point into the library below, plus the whale widget's own skill.
++     * SkillManager seeds their directories from
++     * `assets/default-skills/` and uses this list to enable them for every assistant once.
++     */
++    val BUNDLED_SKILL_NAMES: Set<String> = setOf(
++        "wb-design-verification",
++        "wb-prompt-patterns",
++        "wb-imagegen-discipline",
++        "wb-library",
++        "whale-whisper",
++    )
++
++    /** Absolute path of the seeded library; stable for the lifetime of the package. */
++    fun targetDir(context: Context): File = File(context.filesDir, DIR_NAME)
++
++    /**
++     * Copy the bundled asset tree into [targetDir] when [version] differs from the marker
++     * written by the last successful copy.
++     *
++     * @return true when a copy ran, false when it was skipped or failed.
++     */
++    suspend fun seedIfNeeded(context: Context, version: String, force: Boolean = false): Boolean =
++        withContext(Dispatchers.IO) {
++            runCatching {
++                val target = targetDir(context)
++                val marker = File(target, VERSION_MARKER)
++                val stamped = if (marker.isFile) marker.readText().trim() else ""
++                if (!force && stamped == version) return@runCatching false
++
++                val startedAt = System.currentTimeMillis()
++                copyAssetTree(context, ASSET_ROOT, target)
++                marker.writeText(version)
++                Log.i(
++                    TAG,
++                    "seedIfNeeded: seeded $ASSET_ROOT -> ${target.absolutePath} in " +
++                        "${System.currentTimeMillis() - startedAt} ms",
++                )
++                true
++            }.onFailure {
++                Log.w(TAG, "seedIfNeeded: failed; the agent keeps the previous revision", it)
++            }.getOrDefault(false)
++        }
++
++    /**
++     * Recursively copy one asset path. AssetManager reports a directory by returning a
++     * non-empty child list and a file by returning an empty one, so an empty list means
++     * "open and copy". Empty directories cannot be represented in assets, so a read
++     * failure here only ever comes from a genuine IO problem.
++     */
++    private fun copyAssetTree(context: Context, assetPath: String, dest: File) {
++        val children = context.assets.list(assetPath).orEmpty()
++        if (children.isEmpty()) {
++            dest.parentFile?.mkdirs()
++            context.assets.open(assetPath).use { input ->
++                dest.outputStream().use { output -> input.copyTo(output) }
++            }
++            return
++        }
++        dest.mkdirs()
++        for (child in children) {
++            copyAssetTree(context, "$assetPath/$child", File(dest, child))
++        }
++    }
++}
+diff --git a/app/src/main/java/me/rerere/rikkahub/service/ChatService.kt b/app/src/main/java/me/rerere/rikkahub/service/ChatService.kt
+index 49986db9..04bcb420 100644
+--- a/app/src/main/java/me/rerere/rikkahub/service/ChatService.kt
++++ b/app/src/main/java/me/rerere/rikkahub/service/ChatService.kt
+@@ -50,6 +50,8 @@ import me.rerere.ai.provider.TextGenerationParams
+ import me.rerere.ai.ui.ToolApprovalState
+ import me.rerere.ai.ui.UIMessage
+ import me.rerere.ai.ui.UIMessagePart
++import me.rerere.rikkahub.whale.WhaleStore
++import me.rerere.rikkahub.whale.WhaleTarget
+ import me.rerere.ai.ui.canResumeToolExecution
+ import me.rerere.ai.ui.finishPendingTools
+ import me.rerere.ai.ui.finishReasoning
+@@ -824,6 +826,38 @@ class ChatService(
+         }
+     }
+ 
++    /**
++     * [Whisper widget] Conversations generating right now, with display titles — the whale
++     * overlay uses this to pick a dispatch target (one running conversation is dispatched
++     * straight away; several get a picker).
++     */
++    suspend fun activeGeneratingConversations(): List<WhaleTarget> =
++        sessions.values.filter { it.isGenerating }.map { session ->
++            val title = runCatching { conversationRepo.getConversationById(session.id)?.title }
++                .getOrNull()
++                ?.takeIf { it.isNotBlank() }
++                ?: "新对话"
++            WhaleTarget(session.id.toString(), title)
++        }
++
++    /**
++     * [Whisper widget] Consume a pending supplement request at the next model-request
++     * boundary of the tool loop and append one user-role instruction telling the agent to
++     * ask its single question. Returns null when nothing is pending, so the loop keeps the
++     * message list untouched.
++     */
++    private fun whisperInjection(
++        conversationId: Uuid,
++        messages: List<UIMessage>,
++    ): List<UIMessage>? {
++        if (!WhaleStore.consume(conversationId.toString())) return null
++        Log.i(TAG, "whisper: injecting supplement request into $conversationId")
++        return messages + UIMessage(
++            role = MessageRole.USER,
++            parts = listOf(UIMessagePart.Text(WhaleStore.WHISPER_INSTRUCTION)),
++        )
++    }
++
+     /** Enqueue immediately; the result belongs to this item even after edits or later turns. */
+     fun enqueueVoiceMessage(conversationId: Uuid, text: String): Deferred<String?> {
+         val session = getOrCreateSession(conversationId)
+@@ -1697,8 +1731,9 @@ class ChatService(
+                         }
+                     }
+                 },
+-                onBeforeModelRequest = {
++                onBeforeModelRequest = { currentMessages ->
+                     awaitForegroundWorkReady()
++                    whisperInjection(conversationId, currentMessages)
+                 },
+                 messages = messagesForGeneration,
+                 assistant = assistant,
+diff --git a/app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt b/app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt
+new file mode 100644
+index 00000000..df519a73
+--- /dev/null
++++ b/app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt
+@@ -0,0 +1,453 @@
++package me.rerere.rikkahub.whale
++
++import android.annotation.SuppressLint
++import android.app.NotificationChannel
++import android.app.NotificationManager
++import android.app.PendingIntent
++import android.app.Service
++import android.content.Context
++import android.content.Intent
++import android.content.pm.ServiceInfo
++import android.graphics.Color
++import android.graphics.PixelFormat
++import android.graphics.drawable.GradientDrawable
++import android.os.Build
++import android.os.IBinder
++import android.provider.Settings
++import android.util.Log
++import android.util.TypedValue
++import android.view.Gravity
++import android.view.MotionEvent
++import android.view.View
++import android.view.WindowManager
++import android.widget.ImageView
++import android.widget.LinearLayout
++import android.widget.TextView
++import androidx.core.app.NotificationCompat
++import androidx.core.app.ServiceCompat
++import androidx.core.content.ContextCompat
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.launch
++import me.rerere.rikkahub.R
++import me.rerere.rikkahub.service.ChatService
++import org.koin.android.ext.android.inject
++import kotlin.math.abs
++import kotlin.math.max
++import kotlin.math.min
++
++private const val TAG = "WhaleOverlay"
++
++/**
++ * The whisper-whale widget, RikkaHub Agent edition.
++ *
++ * A resident, draggable whale that floats above every app (SYSTEM_ALERT_WINDOW). One tap asks
++ * the running agent to stop at its next action boundary and ask 「有什么要补充的吗？」 — the same
++ * interaction contract as the WorkBuddy / ZCode / DSH editions of the widget; only the "where
++ * does the click land" plumbing differs (here: an in-process flag consumed by the generation
++ * loop).
++ */
++class WhaleOverlayService : Service() {
++
++    companion object {
++        const val ACTION_START = "me.rerere.rikkahub.action.WHALE_START"
++        const val ACTION_STOP = "me.rerere.rikkahub.action.WHALE_STOP"
++        const val NOTIFICATION_ID = 2003
++        const val CHANNEL_ID = "whale_widget"
++
++        fun start(context: Context) {
++            ContextCompat.startForegroundService(
++                context,
++                Intent(context, WhaleOverlayService::class.java).setAction(ACTION_START),
++            )
++        }
++
++        fun stop(context: Context) {
++            context.startService(
++                Intent(context, WhaleOverlayService::class.java).setAction(ACTION_STOP),
++            )
++        }
++
++        /** True when this app may draw the overlay. */
++        fun canDraw(context: Context): Boolean = Settings.canDrawOverlays(context)
++    }
++
++    private val chatService: ChatService by inject()
++    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
++
++    private lateinit var windowManager: WindowManager
++    private var whaleView: ImageView? = null
++    private var dotView: View? = null
++    private var bubbleView: TextView? = null
++    private var menuView: LinearLayout? = null
++    private var bubbleJob: Job? = null
++
++    private val density: Float get() = resources.displayMetrics.density
++    private fun dp(value: Int): Int = (value * density).toInt()
++
++    override fun onBind(intent: Intent?): IBinder? = null
++
++    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        when (intent?.action) {
++            ACTION_STOP -> {
++                tearDown()
++                stopForeground(STOP_FOREGROUND_REMOVE)
++                stopSelf()
++                return START_NOT_STICKY
++            }
++        }
++        if (!canDraw(this)) {
++            Log.w(TAG, "overlay permission missing; whale stays hidden")
++            stopSelf()
++            return START_NOT_STICKY
++        }
++        if (!startForegroundCompat()) {
++            stopSelf()
++            return START_NOT_STICKY
++        }
++        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
++        ensureViews()
++        return START_STICKY
++    }
++
++    override fun onDestroy() {
++        tearDown()
++        serviceScope.cancel()
++        super.onDestroy()
++    }
++
++    // ---------------------------------------------------------------- overlay plumbing
++
++    private fun overlayParams(): WindowManager.LayoutParams =
++        WindowManager.LayoutParams(
++            WindowManager.LayoutParams.WRAP_CONTENT,
++            WindowManager.LayoutParams.WRAP_CONTENT,
++            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
++            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply { gravity = Gravity.TOP or Gravity.START }
++
++    private fun defaultPosition(): Pair<Int, Int> {
++        val metrics = resources.displayMetrics
++        return (metrics.widthPixels - dp(84)) to (metrics.heightPixels - dp(220))
++    }
++
++    private fun clamped(x: Int, y: Int): Pair<Int, Int> {
++        val metrics = resources.displayMetrics
++        val size = dp(64)
++        return max(0, min(x, metrics.widthPixels - size)) to
++            max(0, min(y, metrics.heightPixels - size))
++    }
++
++    private fun ensureViews() {
++        if (WhaleStore.isHidden(this)) showDot() else showWhale()
++    }
++
++    @SuppressLint("ClickableViewAccessibility")
++    private fun showWhale() {
++        removeWhale()
++        removeDot()
++        val image = ImageView(this).apply {
++            setImageResource(R.drawable.ic_whale)
++            contentDescription = "补充提示挂件"
++            alpha = 0.92f
++        }
++        val params = overlayParams()
++        val saved = WhaleStore.position(this) ?: defaultPosition()
++        val start = clamped(saved.first, saved.second)
++        params.x = start.first
++        params.y = start.second
++
++        var downX = 0f
++        var downY = 0f
++        var originX = 0
++        var originY = 0
++        var dragging = false
++
++        image.setOnTouchListener { _, event ->
++            when (event.actionMasked) {
++                MotionEvent.ACTION_DOWN -> {
++                    downX = event.rawX
++                    downY = event.rawY
++                    originX = params.x
++                    originY = params.y
++                    dragging = false
++                    true
++                }
++
++                MotionEvent.ACTION_MOVE -> {
++                    val dx = (event.rawX - downX).toInt()
++                    val dy = (event.rawY - downY).toInt()
++                    if (!dragging && (abs(dx) > dp(6) || abs(dy) > dp(6))) dragging = true
++                    if (dragging) {
++                        val moved = clamped(originX + dx, originY + dy)
++                        params.x = moved.first
++                        params.y = moved.second
++                        runCatching { windowManager.updateViewLayout(image, params) }
++                    }
++                    true
++                }
++
++                MotionEvent.ACTION_UP -> {
++                    if (dragging) {
++                        WhaleStore.savePosition(this, params.x, params.y)
++                        bubble("位置记住了")
++                    } else if (event.eventTime - event.downTime >= 500) {
++                        toggleMenu(params.x, params.y)
++                    } else {
++                        hideMenu()
++                        dispatch()
++                    }
++                    true
++                }
++
++                else -> false
++            }
++        }
++
++        whaleView = image
++        runCatching { windowManager.addView(image, params) }
++            .onFailure {
++                Log.e(TAG, "failed to add whale overlay", it)
++                stopSelf()
++            }
++    }
++
++    private fun showDot() {
++        removeWhale()
++        removeDot()
++        val size = dp(22)
++        val dot = View(this).apply {
++            background = GradientDrawable().apply {
++                shape = GradientDrawable.OVAL
++                setColor(Color.parseColor("#B33A57DE"))
++                setStroke(dp(1), Color.parseColor("#66FFFFFF"))
++            }
++        }
++        val params = overlayParams().apply {
++            width = size
++            height = size
++            val saved = WhaleStore.position(this@WhaleOverlayService) ?: defaultPosition()
++            val spot = clamped(saved.first, saved.second)
++            x = spot.first
++            y = spot.second
++        }
++        dot.setOnClickListener {
++            WhaleStore.setHidden(this, false)
++            showWhale()
++        }
++        dotView = dot
++        runCatching { windowManager.addView(dot, params) }
++    }
++
++    private fun removeWhale() {
++        whaleView?.let { runCatching { windowManager.removeView(it) } }
++        whaleView = null
++    }
++
++    private fun removeDot() {
++        dotView?.let { runCatching { windowManager.removeView(it) } }
++        dotView = null
++    }
++
++    private fun tearDown() {
++        hideMenu()
++        hideBubble()
++        removeWhale()
++        removeDot()
++    }
++
++    // ---------------------------------------------------------------- bubbles
++
++    private fun bubble(text: String, durationMs: Long = 2000L) {
++        bubbleJob?.cancel()
++        hideBubble()
++        val view = TextView(this).apply {
++            setText(text)
++            setTextColor(Color.WHITE)
++            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
++            background = GradientDrawable().apply {
++                cornerRadius = dp(14).toFloat()
++                setColor(Color.parseColor("#E61E2436"))
++                setStroke(dp(1), Color.parseColor("#4D8FA8FF"))
++            }
++            setPadding(dp(14), dp(9), dp(14), dp(9))
++        }
++        val params = overlayParams().apply {
++            val whale = WhaleStore.position(this@WhaleOverlayService) ?: defaultPosition()
++            val spot = clamped(whale.first - dp(60), whale.second - dp(54))
++            x = spot.first
++            y = spot.second
++        }
++        bubbleView = view
++        runCatching { windowManager.addView(view, params) }
++        bubbleJob = serviceScope.launch {
++            delay(durationMs)
++            hideBubble()
++        }
++    }
++
++    private fun hideBubble() {
++        bubbleView?.let { runCatching { windowManager.removeView(it) } }
++        bubbleView = null
++    }
++
++    // ---------------------------------------------------------------- menu
++
++    private fun menuParams(x: Int, y: Int): WindowManager.LayoutParams {
++        val width = dp(160)
++        val metrics = resources.displayMetrics
++        return overlayParams().apply {
++            this.width = width
++            this.height = WindowManager.LayoutParams.WRAP_CONTENT
++            this.x = max(0, min(x - width + dp(64), metrics.widthPixels - width))
++            this.y = max(0, min(y, metrics.heightPixels - dp(230)))
++        }
++    }
++
++    private fun menuButton(label: String, onClick: () -> Unit): TextView =
++        TextView(this).apply {
++            setText(label)
++            setTextColor(Color.WHITE)
++            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
++            setPadding(dp(14), dp(10), dp(14), dp(10))
++            isClickable = true
++            setOnClickListener {
++                hideMenu()
++                onClick()
++            }
++        }
++
++    private fun toggleMenu(x: Int, y: Int) {
++        if (menuView != null) {
++            hideMenu()
++            return
++        }
++        val column = menuColumn()
++        column.addView(menuButton("点我提问") { dispatch() })
++        column.addView(menuButton("重置位置") {
++            WhaleStore.resetPosition(this)
++            showWhale()
++            bubble("位置已复位")
++        })
++        column.addView(
++            menuButton(if (WhaleStore.isHidden(this)) "显示小鲸鱼" else "隐藏小鲸鱼") {
++                val hidden = !WhaleStore.isHidden(this)
++                WhaleStore.setHidden(this, hidden)
++                if (hidden) showDot() else showWhale()
++            },
++        )
++        column.addView(menuButton("关于") {
++            bubble("补充提示挂件 v1 · RikkaHub Agent 版\n点一下我就去问「有什么要补充的吗？」", 3200L)
++        })
++        val params = menuParams(x, y)
++        menuView = column
++        runCatching { windowManager.addView(column, params) }
++    }
++
++    private fun menuColumn(): LinearLayout = LinearLayout(this).apply {
++        orientation = LinearLayout.VERTICAL
++        background = GradientDrawable().apply {
++            cornerRadius = dp(14).toFloat()
++            setColor(Color.parseColor("#F21E2436"))
++            setStroke(dp(1), Color.parseColor("#4D8FA8FF"))
++        }
++        setPadding(dp(4), dp(6), dp(4), dp(6))
++    }
++
++    private fun hideMenu() {
++        menuView?.let { runCatching { windowManager.removeView(it) } }
++        menuView = null
++    }
++
++    // ---------------------------------------------------------------- dispatch
++
++    /** The widget's whole job: land one whisper request on a running conversation. */
++    private fun dispatch() {
++        serviceScope.launch {
++            val targets = runCatching { chatService.activeGeneratingConversations() }
++                .onFailure { Log.e(TAG, "cannot enumerate running conversations", it) }
++                .getOrDefault(emptyList())
++            when {
++                targets.isEmpty() -> bubble("现在没有正在跑的任务")
++                targets.size == 1 -> deliver(targets.first())
++                else -> showPicker(targets)
++            }
++        }
++    }
++
++    private fun showPicker(targets: List<WhaleTarget>) {
++        hideMenu()
++        val column = menuColumn()
++        column.addView(menuButton("有 " + targets.size + " 个任务在跑，点哪个？") {})
++        targets.take(5).forEach { target ->
++            column.addView(menuButton(target.title.take(18)) { deliver(target) })
++        }
++        val saved = WhaleStore.position(this) ?: defaultPosition()
++        val params = menuParams(saved.first, saved.second)
++        menuView = column
++        runCatching { windowManager.addView(column, params) }
++    }
++
++    private fun deliver(target: WhaleTarget) {
++        WhaleStore.requestWhisper(target.conversationId)
++        bubble("已通知 AI ✓", 900L)
++        serviceScope.launch {
++            delay(1000)
++            bubble("它马上就抽空来问你")
++        }
++    }
++
++    // ---------------------------------------------------------------- notification
++
++    private fun startForegroundCompat(): Boolean = try {
++        ensureChannel()
++        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
++            .setSmallIcon(R.drawable.ic_whale)
++            .setContentTitle("补充提示挂件")
++            .setContentText("小鲸鱼常驻中：点一下就能给正在跑的任务补一句话")
++            .setOngoing(true)
++            .setPriority(NotificationCompat.PRIORITY_MIN)
++            .addAction(0, "藏起来", stopPendingIntent())
++            .build()
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
++            ServiceCompat.startForeground(
++                this,
++                NOTIFICATION_ID,
++                notification,
++                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
++            )
++        } else {
++            startForeground(NOTIFICATION_ID, notification)
++        }
++        true
++    } catch (e: Exception) {
++        Log.e(TAG, "failed to start foreground service", e)
++        false
++    }
++
++    private fun stopPendingIntent(): PendingIntent = PendingIntent.getService(
++        this,
++        0,
++        Intent(this, WhaleOverlayService::class.java).setAction(ACTION_STOP),
++        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
++    )
++
++    private fun ensureChannel() {
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
++        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
++        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
++        manager.createNotificationChannel(
++            NotificationChannel(
++                CHANNEL_ID,
++                "补充提示挂件",
++                NotificationManager.IMPORTANCE_MIN,
++            ).apply { description = "小鲸鱼挂件的常驻通知" },
++        )
++    }
++}
+diff --git a/app/src/main/java/me/rerere/rikkahub/whale/WhaleStore.kt b/app/src/main/java/me/rerere/rikkahub/whale/WhaleStore.kt
+new file mode 100644
+index 00000000..53bea51d
+--- /dev/null
++++ b/app/src/main/java/me/rerere/rikkahub/whale/WhaleStore.kt
+@@ -0,0 +1,94 @@
++package me.rerere.rikkahub.whale
++
++import android.content.Context
++import java.util.concurrent.ConcurrentHashMap
++
++/**
++ * Shared state for the whisper-whale widget (the RikkaHub Agent edition of
++ * https://github.com/Elysia-laoda/whale-whisper).
++ *
++ * The widget itself is a system overlay ([WhaleOverlayService]); the agent side is a flag
++ * this object holds per conversation. When the user taps the whale we set the flag, and
++ * [me.rerere.rikkahub.service.ChatService] consumes it at the next model-request boundary
++ * inside the tool loop — "the next action boundary" of the shared design contract — by
++ * appending one user-role instruction telling the agent to ask its one question.
++ *
++ * All state is in memory except the widget's own UI preferences (position / hidden /
++ * enabled), which persist in SharedPreferences.
++ */
++object WhaleStore {
++    private const val PREFS = "whale_widget"
++    private const val KEY_ENABLED = "enabled"
++    private const val KEY_HIDDEN = "hidden"
++    private const val KEY_X = "overlay_x"
++    private const val KEY_Y = "overlay_y"
++
++    /**
++     * Injected as a user message at the next model request. Kept verbatim in one place so the
++     * four host editions of the widget share the same interaction contract: ask immediately,
++     * one question, no options, fold the answer into the plan, say what changed, ask once.
++     */
++    const val WHISPER_INSTRUCTION: String =
++        "【补充提示挂件】用户点了小鲸鱼，想给正在跑的任务补一句话。请**立刻**（不要等任务做完、不要攒到最后）" +
++            "调用 ask_user 工具，只问一个问题：「有什么要补充的吗？」。header 用「补充提示」，不要提供选项" +
++            "（留空让用户自由输入）。拿到回答后，把补充内容纳入当前计划再继续，并用一句话说明你据此调整了什么。" +
++            "同一次点击只处理一次；用户跳过或没回答就按原计划继续，不要反复追问。"
++
++    /** conversation id (string form) -> wall-clock ms of the last tap. */
++    private val pending = ConcurrentHashMap<String, Long>()
++
++    fun requestWhisper(conversationId: String) {
++        pending[conversationId] = System.currentTimeMillis()
++    }
++
++    fun hasPending(conversationId: String): Boolean = pending.containsKey(conversationId)
++
++    /** True when this request is still waiting and was just claimed by the caller. */
++    fun consume(conversationId: String): Boolean = pending.remove(conversationId) != null
++
++    /** Drop a request that can no longer be delivered (conversation gone / cancelled). */
++    fun cancel(conversationId: String) {
++        pending.remove(conversationId)
++    }
++
++    fun pendingCount(): Int = pending.size
++
++    private fun prefs(context: Context) =
++        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++
++    var Context.whaleEnabled: Boolean
++        get() = prefs(this).getBoolean(KEY_ENABLED, true)
++        set(value) {
++            prefs(this).edit().putBoolean(KEY_ENABLED, value).apply()
++        }
++
++    fun isEnabled(context: Context): Boolean = context.whaleEnabled
++
++    fun setEnabled(context: Context, enabled: Boolean) {
++        context.whaleEnabled = enabled
++    }
++
++    fun isHidden(context: Context): Boolean = prefs(context).getBoolean(KEY_HIDDEN, false)
++
++    fun setHidden(context: Context, hidden: Boolean) {
++        prefs(context).edit().putBoolean(KEY_HIDDEN, hidden).apply()
++    }
++
++    /** Saved overlay position, or null when the whale has never been dragged. */
++    fun position(context: Context): Pair<Int, Int>? {
++        val p = prefs(context)
++        if (!p.contains(KEY_X) || !p.contains(KEY_Y)) return null
++        return p.getInt(KEY_X, 0) to p.getInt(KEY_Y, 0)
++    }
++
++    fun savePosition(context: Context, x: Int, y: Int) {
++        prefs(context).edit().putInt(KEY_X, x).putInt(KEY_Y, y).apply()
++    }
++
++    fun resetPosition(context: Context) {
++        prefs(context).edit().remove(KEY_X).remove(KEY_Y).apply()
++    }
++}
++
++/** A conversation the widget can dispatch into. */
++data class WhaleTarget(val conversationId: String, val title: String)
+diff --git a/app/src/main/res/drawable/ic_whale.xml b/app/src/main/res/drawable/ic_whale.xml
+new file mode 100644
+index 00000000..fb47e9fe
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_whale.xml
+@@ -0,0 +1,66 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Original whale geometry, hand-drawn for this project (same shape as the DSH edition's
++     icon.svg): blunt head, blunt tail fluke, short swept pectoral fin, eye, mouth, and a
++     speech bubble with three dots. -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:aapt="http://schemas.android.com/aapt"
++    android:width="44dp"
++    android:height="44dp"
++    android:viewportWidth="64"
++    android:viewportHeight="64">
++
++    <!-- tail fluke -->
++    <path android:pathData="M39.5 34.4C42.8 30.6 45.9 28.2 49.6 27.2A3.8 3.8 0 0 1 49.6 34.8C48.6 35.8 47.5 36.9 46.8 38C47.5 39.1 48.6 40.2 49.6 41.2A3.8 3.8 0 0 1 49.6 48.8C45.9 47.8 42.8 45.4 39.5 41.6Z">
++        <aapt:attr name="android:fillColor">
++            <gradient
++                android:type="linear"
++                android:startX="42" android:startY="27"
++                android:endX="48" android:endY="49">
++                <item android:offset="0" android:color="#FF6380FF" />
++                <item android:offset="1" android:color="#FF22339E" />
++            </gradient>
++        </aapt:attr>
++    </path>
++
++    <!-- pectoral fin -->
++    <path
++        android:pathData="M16 45C19 52 24 56.5 31 56.5C29 51.5 26 47 23 44.6Z"
++        android:fillColor="#FF2840B4" />
++
++    <!-- body -->
++    <path android:pathData="M10 30C16 25.4 28 24.8 35 27.6C40 29.6 42.6 32.6 42.6 38C42.6 43.4 40 46.4 35 48.4C28 51.2 16 50.6 10 46C6.4 43.4 6.4 32.6 10 30Z">
++        <aapt:attr name="android:fillColor">
++            <gradient
++                android:type="linear"
++                android:startX="10" android:startY="25"
++                android:endX="42" android:endY="50">
++                <item android:offset="0" android:color="#FF6C86FF" />
++                <item android:offset="0.55" android:color="#FF3A57DE" />
++                <item android:offset="1" android:color="#FF1E2E96" />
++            </gradient>
++        </aapt:attr>
++    </path>
++
++    <!-- eye -->
++    <path
++        android:pathData="M18.1,36.5 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0 z"
++        android:fillColor="#FF0C1430" />
++    <path
++        android:pathData="M21.15,35.4 a1.05,1.05 0 1,0 2.1,0 a1.05,1.05 0 1,0 -2.1,0 z"
++        android:fillColor="#FFFFFFFF" />
++
++    <!-- mouth -->
++    <path
++        android:pathData="M8.8 43.6C13.4 46.4 18.6 46.8 22.6 45.2"
++        android:strokeColor="#CC16227A"
++        android:strokeWidth="1.7"
++        android:strokeLineCap="round" />
++
++    <!-- speech bubble -->
++    <path android:pathData="M13,18.5 L21,18.5 L13.5,26.5 Z" android:fillColor="#FFE9EFFF" />
++    <path android:pathData="M16.25,3 L25.75,3 A8.25,8.25 0 0 1 25.75,19.5 L16.25,19.5 A8.25,8.25 0 0 1 16.25,3 Z"
++        android:fillColor="#FFE9EFFF" />
++    <path android:pathData="M12.5,11.2 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 z" android:fillColor="#FF3A57DE" />
++    <path android:pathData="M19,11.2 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 z" android:fillColor="#FF3A57DE" />
++    <path android:pathData="M25.5,11.2 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 z" android:fillColor="#FF3A57DE" />
++</vector>
+-- 
+2.53.0.windows.1
+
