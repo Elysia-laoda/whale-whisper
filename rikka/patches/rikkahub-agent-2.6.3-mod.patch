@@ -1,74 +1,103 @@
-From 68c24fb1312fbadb99f69de1d1c5cdf6e47f310c Mon Sep 17 00:00:00 2001
-From: =?UTF-8?q?=E5=87=AF=E6=96=87?= <2709674196@qq.com>
-Date: Fri, 9 Oct 2026 21:43:41 +0800
-Subject: [PATCH] feat: ship the WorkBuddy reference library and the
- whisper-whale widget (2.6.2-mod)
-
-Library: assets/wb-library (curated 01-06 + 10 partitions) seeded to files/wb-library by WbLibrarySeeder, keyed on BuildConfig.VERSION_CODE; four bundled reference skills (wb-design-verification, wb-prompt-patterns, wb-imagegen-discipline, wb-library) plus whale-whisper are seeded from assets/default-skills and additively enabled on every assistant once.
-
-Widget: WhaleOverlayService (SYSTEM_ALERT_WINDOW overlay, draggable + remembered, long-press menu) dispatches a whisper request into a generating conversation; ChatService consumes it at the next model-request boundary of GenerationLoop and appends one user instruction telling the agent to ask its single question.
----
- app/build.gradle.kts                          |  11 +-
- app/src/main/AndroidManifest.xml              |  11 +
- .../wb-design-verification/SKILL.md           |  41 ++
- .../wb-imagegen-discipline/SKILL.md           |  32 ++
- .../assets/default-skills/wb-library/SKILL.md |  37 ++
- .../wb-prompt-patterns/SKILL.md               |  40 ++
- .../default-skills/whale-whisper/SKILL.md     |  24 +
- .../java/me/rerere/rikkahub/RikkaHubApp.kt    |  59 +++
- .../rerere/rikkahub/data/ai/GenerationLoop.kt |   5 +-
- .../rikkahub/data/files/SkillManager.kt       |  35 ++
- .../rikkahub/data/files/WbLibrarySeeder.kt    | 101 ++++
- .../me/rerere/rikkahub/service/ChatService.kt |  37 +-
- .../rikkahub/whale/WhaleOverlayService.kt     | 453 ++++++++++++++++++
- .../me/rerere/rikkahub/whale/WhaleStore.kt    |  94 ++++
- app/src/main/res/drawable/ic_whale.xml        |  66 +++
- 15 files changed, 1039 insertions(+), 7 deletions(-)
- create mode 100644 app/src/main/assets/default-skills/wb-design-verification/SKILL.md
- create mode 100644 app/src/main/assets/default-skills/wb-imagegen-discipline/SKILL.md
- create mode 100644 app/src/main/assets/default-skills/wb-library/SKILL.md
- create mode 100644 app/src/main/assets/default-skills/wb-prompt-patterns/SKILL.md
- create mode 100644 app/src/main/assets/default-skills/whale-whisper/SKILL.md
- create mode 100644 app/src/main/java/me/rerere/rikkahub/data/files/WbLibrarySeeder.kt
- create mode 100644 app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt
- create mode 100644 app/src/main/java/me/rerere/rikkahub/whale/WhaleStore.kt
- create mode 100644 app/src/main/res/drawable/ic_whale.xml
-
 diff --git a/app/build.gradle.kts b/app/build.gradle.kts
-index 44625e55..2c7f6a79 100644
+index 4477cef8..13fc0993 100644
 --- a/app/build.gradle.kts
 +++ b/app/build.gradle.kts
-@@ -19,15 +19,18 @@ android {
+@@ -19,8 +19,18 @@ android {
          applicationId = "excp.rikkahub"
          minSdk = 26
          targetSdk = 37
--        versionCode = 188
-+        versionCode = 189
-         // "-mod" marks the zero-friction build: the version code sits above every upstream
-         // release this fork is based on, so an in-place upgrade from the stock app still
-         // compares correctly, while the About screen and the APK filename say which build is
-         // installed. 2.6.0-mod added the external-access surface (MCP server, ACI controlled
--        // endpoint) and the on-device APK build chain; 2.6.1-mod merges upstream
+-        versionCode = 187
+-        versionName = "2.5.1"
++        versionCode = 190
++        // "-mod" marks the zero-friction build: the version code sits above every upstream
++        // release this fork is based on, so an in-place upgrade from the stock app still
++        // compares correctly, while the About screen and the APK filename say which build is
++        // installed. 2.6.0-mod added the external-access surface (MCP server, ACI controlled
 +        // endpoint) and the on-device APK build chain; 2.6.1-mod merged upstream
-         // v2.5.1-agent.1 (OpenRouter Images API, Shizuku bind-timeout retry, prompt-cache,
--        // streamed-image and stop-during-tool-call fixes).
--        versionName = "2.6.1-mod"
++        // v2.5.1-agent.1 (OpenRouter Images API, Shizuku bind-timeout retry, prompt-cache,
 +        // streamed-image and stop-during-tool-call fixes); 2.6.2-mod ships the WorkBuddy
 +        // reference library as app assets (seeded to files/wb-library) with four bundled
 +        // reference skills, and the whisper-whale widget (resident overlay + generation-loop
 +        // supplement injection).
-+        versionName = "2.6.2-mod"
++        versionName = "2.6.3-mod"
  
          testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
  
+@@ -81,6 +91,12 @@ android {
+             signingConfig = signingConfigs.getByName("release")
+             optimization {
+                 enable = true
++                // Shizuku's classic `newProcess` is private and never called from Kotlin, so
++                // R8 strips it. ShizukuManager.exec reaches it by reflection as its fallback
++                // transport, so proguard-rules.pro has to keep it alive.
++                keepRules {
++                    files.add(layout.projectDirectory.file("proguard-rules.pro").asFile)
++                }
+             }
+             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
+             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+@@ -344,6 +360,10 @@ dependencies {
+     implementation(libs.shizuku.api)
+     implementation(libs.shizuku.provider)
+ 
++    // ACI protocol library (vendored from ZorvAI, Apache-2.0) — backs AciControlService,
++    // which lets an ACI controller on this device drive the agent.
++    implementation(project(":aci-core"))
++
+     // tests
+     testImplementation(libs.junit)
+     androidTestImplementation(libs.androidx.junit)
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index ca2c4c74..8dd73663 100644
+index 0804d53a..8dd73663 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
-@@ -420,6 +420,17 @@
-         android:value="local MCP server exposing the agent to other clients" />
+@@ -31,6 +31,33 @@
+   <uses-permission
+     android:name="android.permission.PACKAGE_USAGE_STATS"
+     tools:ignore="ProtectedPermissions" />
++
++  <!-- ACI controlled endpoint. These reference permissions DEFINED BY THE CONTROLLER
++       (ZorvAI); this app must only reference them, never define them. If both apps
++       defined the same permission name under different signatures, installing the
++       second one fails with INSTALL_FAILED_DUPLICATE_PERMISSION. CALL_DANGEROUS is
++       deliberately not referenced: none of the capabilities below declare
++       FLAG_DANGEROUS, so this app never needs to hold it. -->
++  <uses-permission android:name="ai.aci.permission.CALL" />
++  <uses-permission android:name="ai.aci.permission.DISCOVER" />
++  <!-- Merge guards: strip any <permission> declaration a future revision of the
++       vendored :aci-core library might introduce. Removing is not defining. -->
++  <permission android:name="ai.aci.permission.CALL" tools:node="remove" />
++  <permission android:name="ai.aci.permission.DISCOVER" tools:node="remove" />
++  <permission android:name="ai.aci.permission.CALL_DANGEROUS" tools:node="remove" />
++
++  <!-- Package visibility: without these, a controller's queryIntentServices() for
++       ACTION_BIND returns nothing on Android 11+ and the app looks incapable
++       rather than undiscoverable. -->
++  <queries>
++    <intent>
++      <action android:name="ai.aci.core.ACTION_BIND" />
++    </intent>
++    <intent>
++      <action android:name="ai.aci.core.ACTION_WAKE" />
++    </intent>
++  </queries>
++
+   <uses-permission android:name="android.permission.READ_CALENDAR" />
+   <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+ 
+@@ -384,6 +411,46 @@
+         android:value="local web server for LLM chat UI" />
      </service>
  
++    <service
++      android:name=".service.McpServerService"
++      android:exported="false"
++      android:foregroundServiceType="specialUse">
++      <property
++        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
++        android:value="local MCP server exposing the agent to other clients" />
++    </service>
++
 +    <!-- Whisper-whale widget: a resident overlay above every app. Tapping it makes the
 +         running agent ask 「有什么要补充的吗？」 at its next action boundary. -->
 +    <service
@@ -80,9 +109,29 @@ index ca2c4c74..8dd73663 100644
 +        android:value="resident whisper widget overlay" />
 +    </service>
 +
-     <!-- ACI controlled endpoint. android:permission references the controller's
-          permission as the first gate; AciCallerPolicy is the second, and it is what
-          honours the on/off switch in Settings. -->
++    <!-- ACI controlled endpoint. android:permission references the controller's
++         permission as the first gate; AciCallerPolicy is the second, and it is what
++         honours the on/off switch in Settings. -->
++    <service
++      android:name=".aci.AciControlService"
++      android:exported="true"
++      android:permission="ai.aci.permission.CALL">
++      <intent-filter>
++        <action android:name="ai.aci.core.ACTION_BIND" />
++      </intent-filter>
++    </service>
++
++    <receiver
++      android:name=".aci.AciWakeReceiver"
++      android:exported="true">
++      <intent-filter>
++        <action android:name="ai.aci.core.ACTION_WAKE" />
++      </intent-filter>
++    </receiver>
++
+     <service
+       android:name=".service.ChatGenerationForegroundService"
+       android:exported="false"
 diff --git a/app/src/main/assets/default-skills/wb-design-verification/SKILL.md b/app/src/main/assets/default-skills/wb-design-verification/SKILL.md
 new file mode 100644
 index 00000000..1e3c5c61
@@ -288,7 +337,7 @@ index 00000000..674a6a83
 +- 用户说「关掉挂件」→ 本次对话不再理会该提醒（照常完成当前任务即可）。
 +- 挂件只是"递话"的通道：补充内容本身仍然服从你已有的安全与验证纪律。
 diff --git a/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt b/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt
-index 67c1b43f..2793e63b 100644
+index c20f8e86..2793e63b 100644
 --- a/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt
 +++ b/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt
 @@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineName
@@ -301,17 +350,42 @@ index 67c1b43f..2793e63b 100644
  import java.io.File
  import kotlinx.coroutines.SupervisorJob
  import kotlinx.coroutines.cancel
-@@ -124,6 +127,9 @@ class RikkaHubApp : Application() {
-         // Start the local MCP server if enabled in settings
-         startMcpServerIfEnabled()
+@@ -33,10 +36,13 @@ import me.rerere.rikkahub.di.repositoryModule
+ import me.rerere.rikkahub.di.viewModelModule
+ import me.rerere.rikkahub.data.files.FilesManager
+ import me.rerere.rikkahub.data.datastore.SettingsStore
++import me.rerere.rikkahub.data.permissions.ShizukuPermissionGrantor
++import me.rerere.rikkahub.shizuku.ShizukuManager
+ import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
+ import me.rerere.rikkahub.data.sync.BackupManager
+ import me.rerere.rikkahub.data.sync.RestoreFailedException
+ import me.rerere.rikkahub.utils.JsonInstant
++import me.rerere.rikkahub.service.McpServerService
+ import me.rerere.rikkahub.service.WebServerService
+ import me.rerere.rikkahub.utils.CrashHandler
+ import me.rerere.rikkahub.utils.DatabaseUtil
+@@ -53,6 +59,7 @@ private const val TAG = "RikkaHubApp"
+ const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
+ const val CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID = "chat_live_update"
+ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
++const val MCP_SERVER_NOTIFICATION_CHANNEL_ID = "mcp_server"
  
+ class RikkaHubApp : Application() {
+     override fun onCreate() {
+@@ -117,6 +124,12 @@ class RikkaHubApp : Application() {
+         // Start WebServer if enabled in settings
+         startWebServerIfEnabled()
+ 
++        // Start the local MCP server if enabled in settings
++        startMcpServerIfEnabled()
++
 +        // Bring back the whisper-whale overlay when the user left it on
 +        startWhaleOverlayIfEnabled()
 +
          // Eagerly construct ChatService on the main thread. Its constructor calls
          // LifecycleRegistry.addObserver which throws if it runs off-main, and the Telegram
          // bot service runs on Dispatchers.IO — without this priming, the first inbound bot
-@@ -155,6 +161,11 @@ class RikkaHubApp : Application() {
+@@ -148,6 +161,17 @@ class RikkaHubApp : Application() {
          // is a one-time install — user edits / deletes are respected on subsequent launches.
          seedDefaultSkillsIfNeeded()
  
@@ -320,10 +394,51 @@ index 67c1b43f..2793e63b 100644
 +        // file tools. Keyed on versionCode: refreshed once per APK upgrade.
 +        seedWbLibraryIfNeeded()
 +
-         // Apply the app's permissions over Shizuku's shell UID so a tool call never has to
-         // interrupt the conversation to ask for one. No-op unless Shizuku is already running
-         // and RikkaHub holds its permission: this must never trigger Shizuku's own consent
-@@ -467,6 +478,54 @@ class RikkaHubApp : Application() {
++        // Apply the app's permissions over Shizuku's shell UID so a tool call never has to
++        // interrupt the conversation to ask for one. No-op unless Shizuku is already running
++        // and RikkaHub holds its permission: this must never trigger Shizuku's own consent
++        // flow, which stays a user tap on the Shizuku settings page.
++        autoGrantPermissions()
++
+         // Increment launch count
+         incrementLaunchCount()
+ 
+@@ -352,6 +376,34 @@ class RikkaHubApp : Application() {
+         }
+     }
+ 
++    /**
++     * Silent permission pass over Shizuku. Runs on every launch: it is cheap (the inventory
++     * skips rows that are already granted) and it is how a grant revoked from system Settings
++     * gets restored without the user having to find the permissions page.
++     */
++    private fun autoGrantPermissions() {
++        get<AppScope>().launch(Dispatchers.IO) {
++            runCatching {
++                // The binder is handed over by Shizuku's provider asynchronously, so at
++                // Application.onCreate it is normally not there yet. Without this wait the
++                // status check below fails every launch and the whole pass silently skips —
++                // which looked exactly like Shizuku being broken.
++                ShizukuManager.awaitBinder(BINDER_WAIT_MS)
++                val outcome = ShizukuPermissionGrantor.grantAll(this@RikkaHubApp)
++                Log.i(
++                    TAG,
++                    "permission pass: ready=${outcome.shizukuReady} " +
++                        "applied=${outcome.succeeded}/${outcome.attempted}",
++                )
++            }.onFailure { Log.w(TAG, "automatic permission pass failed", it) }
++        }
++    }
++
++    private companion object {
++        /** How long to wait for Shizuku's binder before giving the pass up for this launch. */
++        const val BINDER_WAIT_MS = 20_000L
++    }
++
+     private fun incrementLaunchCount() {
+         get<AppScope>().launch {
+             runCatching {
+@@ -426,6 +478,54 @@ class RikkaHubApp : Application() {
          }
      }
  
@@ -378,6 +493,134 @@ index 67c1b43f..2793e63b 100644
      private fun checkWorkspaceIntegrity() {
          get<AppScope>().launch(Dispatchers.IO) {
              runCatching {
+@@ -507,6 +607,38 @@ class RikkaHubApp : Application() {
+         }
+     }
+ 
++    /**
++     * Brings back the local MCP server after a restart when the user had it on. Same
++     * notification-permission gate as the web server: without it the foreground service
++     * would start and be killed immediately on API 33+.
++     */
++    private fun startMcpServerIfEnabled() {
++        get<AppScope>().launch {
++            runCatching {
++                delay(500)
++                val settings = get<SettingsStore>().settingsFlowRaw.first()
++                if (!settings.mcpServerEnabled) return@launch
++                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
++                    ContextCompat.checkSelfPermission(
++                        this@RikkaHubApp,
++                        android.Manifest.permission.POST_NOTIFICATIONS
++                    ) != PackageManager.PERMISSION_GRANTED
++                ) {
++                    Log.w(TAG, "startMcpServerIfEnabled: notification permission not granted, skipping")
++                    return@launch
++                }
++                val intent = Intent(this@RikkaHubApp, McpServerService::class.java).apply {
++                    action = McpServerService.ACTION_START
++                    putExtra(McpServerService.EXTRA_PORT, settings.mcpServerPort)
++                    putExtra(McpServerService.EXTRA_TOKEN, settings.mcpServerToken)
++                }
++                startForegroundService(intent)
++            }.onFailure {
++                Log.e(TAG, "startMcpServerIfEnabled failed", it)
++            }
++        }
++    }
++
+     private fun createNotificationChannel() {
+         val notificationManager = NotificationManagerCompat.from(this)
+         val chatCompletedChannel = NotificationChannelCompat
+@@ -536,12 +668,21 @@ class RikkaHubApp : Application() {
+             .setShowBadge(false)
+             .build()
+         notificationManager.createNotificationChannel(webServerChannel)
++
++        val mcpServerChannel = NotificationChannelCompat
++            .Builder(MCP_SERVER_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
++            .setName(getString(R.string.notification_channel_mcp_server))
++            .setVibrationEnabled(false)
++            .setShowBadge(false)
++            .build()
++        notificationManager.createNotificationChannel(mcpServerChannel)
+     }
+ 
+     override fun onTerminate() {
+         super.onTerminate()
+         get<AppScope>().cancel()
+         stopService(Intent(this, WebServerService::class.java))
++        stopService(Intent(this, McpServerService::class.java))
+     }
+ }
+ 
+diff --git a/app/src/main/java/me/rerere/rikkahub/RouteActivity.kt b/app/src/main/java/me/rerere/rikkahub/RouteActivity.kt
+index 16254315..1e7bcb0e 100644
+--- a/app/src/main/java/me/rerere/rikkahub/RouteActivity.kt
++++ b/app/src/main/java/me/rerere/rikkahub/RouteActivity.kt
+@@ -67,6 +67,7 @@ import me.rerere.rikkahub.data.event.AppEvent
+ import me.rerere.rikkahub.data.event.AppEventBus
+ import me.rerere.rikkahub.ui.activity.SafeModeActivity
+ import me.rerere.rikkahub.ui.components.ui.TTSController
++import me.rerere.rikkahub.ui.components.ui.permission.PermissionPrimingEffect
+ import me.rerere.rikkahub.ui.context.LocalNavController
+ import me.rerere.rikkahub.ui.context.LocalASRState
+ import me.rerere.rikkahub.ui.context.LocalSettings
+@@ -128,6 +129,9 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchDetailPage
+ import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
+ import me.rerere.rikkahub.ui.pages.setting.SettingsSearchPage
+ import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
++import me.rerere.rikkahub.ui.pages.setting.SettingAciPage
++import me.rerere.rikkahub.ui.pages.setting.SettingMcpServerPage
++import me.rerere.rikkahub.ui.pages.setting.SettingWhalePage
+ import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
+ import me.rerere.rikkahub.ui.pages.setting.SettingSubAgentsPage
+ import me.rerere.rikkahub.ui.pages.setting.SettingTelegramPage
+@@ -260,6 +264,9 @@ class RouteActivity : ComponentActivity() {
+     @OptIn(ExperimentalComposeUiApi::class)
+     @Composable
+     fun AppRoutes() {
++        // One-time batch prompt for the permissions the agent's tools need, so they don't
++        // interrupt a conversation later. See PermissionPrimingEffect.
++        PermissionPrimingEffect()
+         val toastState = rememberToasterState()
+         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+         val tts = rememberCustomTtsState()
+@@ -516,6 +523,18 @@ class RouteActivity : ComponentActivity() {
+                                 SettingWebPage()
+                             }
+ 
++                            entry<Screen.SettingMcpServer> {
++                                SettingMcpServerPage()
++                            }
++
++                            entry<Screen.SettingWhale> {
++                                SettingWhalePage()
++                            }
++
++                            entry<Screen.SettingAci> {
++                                SettingAciPage()
++                            }
++
+                             entry<Screen.SettingTelegram> {
+                                 SettingTelegramPage()
+                             }
+@@ -801,6 +820,15 @@ sealed interface Screen : NavKey {
+     @Serializable
+     data object SettingWeb : Screen
+ 
++    @Serializable
++    data object SettingMcpServer : Screen
++
++    @Serializable
++    data object SettingWhale : Screen
++
++    @Serializable
++    data object SettingAci : Screen
++
+     @Serializable
+     data object SettingTelegram : Screen
+ 
 diff --git a/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt b/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt
 index 03b39449..b647e18d 100644
 --- a/app/src/main/java/me/rerere/rikkahub/data/ai/GenerationLoop.kt
@@ -617,12 +860,258 @@ index 49986db9..04bcb420 100644
                  },
                  messages = messagesForGeneration,
                  assistant = assistant,
+diff --git a/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPage.kt b/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPage.kt
+index 8f6b14bb..bd2c5827 100644
+--- a/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPage.kt
++++ b/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPage.kt
+@@ -63,8 +63,9 @@ import me.rerere.hugeicons.stroke.InLove
+ import me.rerere.hugeicons.stroke.LookTop
+ import me.rerere.hugeicons.stroke.McpServer
+ import me.rerere.hugeicons.stroke.Megaphone01
+-import me.rerere.hugeicons.stroke.Package
+ import me.rerere.hugeicons.stroke.Connect
++import me.rerere.hugeicons.stroke.BubbleChatQuestion
++import me.rerere.hugeicons.stroke.Package
+ import me.rerere.hugeicons.stroke.Robot01
+ import me.rerere.hugeicons.stroke.ServerStack01
+ import me.rerere.hugeicons.stroke.Shield01
+@@ -282,6 +283,24 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
+                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
+                         headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
+                     )
++                    item(
++                        onClick = { navController.navigate(Screen.SettingMcpServer) },
++                        leadingContent = { Icon(HugeIcons.Connect, null) },
++                        supportingContent = { Text(stringResource(R.string.setting_page_mcp_server_desc)) },
++                        headlineContent = { Text(stringResource(R.string.setting_page_mcp_server)) },
++                    )
++                    item(
++                        onClick = { navController.navigate(Screen.SettingWhale) },
++                        leadingContent = { Icon(HugeIcons.BubbleChatQuestion, null) },
++                        supportingContent = { Text(stringResource(R.string.setting_page_whale_desc)) },
++                        headlineContent = { Text(stringResource(R.string.setting_page_whale)) },
++                    )
++                    item(
++                        onClick = { navController.navigate(Screen.SettingAci) },
++                        leadingContent = { Icon(HugeIcons.Connect, null) },
++                        supportingContent = { Text(stringResource(R.string.setting_page_aci_desc)) },
++                        headlineContent = { Text(stringResource(R.string.setting_page_aci)) },
++                    )
+                     item(
+                         onClick = { navController.navigate(Screen.SettingTelegram) },
+                         leadingContent = { Icon(HugeIcons.Telegram, null) },
+diff --git a/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingWhalePage.kt b/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingWhalePage.kt
+new file mode 100644
+index 00000000..3954e302
+--- /dev/null
++++ b/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingWhalePage.kt
+@@ -0,0 +1,171 @@
++package me.rerere.rikkahub.ui.pages.setting
++
++import android.content.Intent
++import android.net.Uri
++import android.os.Build
++import android.provider.Settings
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.Icon
++import androidx.compose.material3.LargeFlexibleTopAppBar
++import androidx.compose.material3.Scaffold
++import androidx.compose.material3.Switch
++import androidx.compose.material3.Text
++import androidx.compose.material3.TopAppBarDefaults
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.input.nestedscroll.nestedScroll
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.res.painterResource
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.unit.dp
++import me.rerere.rikkahub.R
++import me.rerere.rikkahub.ui.components.nav.BackButton
++import me.rerere.rikkahub.ui.components.ui.CardGroup
++import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
++import me.rerere.rikkahub.ui.components.ui.permission.PermissionNotification
++import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
++import me.rerere.rikkahub.ui.theme.CustomColors
++import me.rerere.rikkahub.whale.WhaleOverlayService
++import me.rerere.rikkahub.whale.WhaleStore
++
++/**
++ * Whisper-whale widget settings: one switch starts or stops the resident overlay.
++ *
++ * The switch is the authoritative on/off: it writes [WhaleStore]'s persisted flag (so the
++ * app stops bringing the whale back on the next launch) and starts/stops the foreground
++ * service that owns the window. Restarting the app is never required.
++ */
++@Composable
++fun SettingWhalePage() {
++    val context = LocalContext.current
++    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
++
++    var enabled by remember { mutableStateOf(WhaleStore.isEnabled(context)) }
++    var overlayAllowed by remember { mutableStateOf(WhaleOverlayService.canDraw(context)) }
++
++    // Same gate as the web/MCP servers: a foreground service needs POST_NOTIFICATIONS on 33+.
++    val permissionState = rememberPermissionState(
++        permissions = buildSet {
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
++                add(PermissionNotification)
++            }
++        },
++    )
++    PermissionManager(permissionState = permissionState)
++
++    fun openOverlaySettings() {
++        runCatching {
++            context.startActivity(
++                Intent(
++                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
++                    Uri.parse("package:${context.packageName}"),
++                )
++            )
++        }
++    }
++
++    fun apply(next: Boolean) {
++        if (next && !WhaleOverlayService.canDraw(context)) {
++            // Refuse silently would look like a broken switch; send the user to the switch
++            // that actually grants it and leave our own state untouched.
++            openOverlaySettings()
++            return
++        }
++        enabled = next
++        WhaleStore.setEnabled(context, next)
++        if (next) {
++            if (WhaleStore.isHidden(context)) WhaleStore.setHidden(context, false)
++            if (!permissionState.allPermissionsGranted) {
++                permissionState.requestPermissions()
++                return
++            }
++            WhaleOverlayService.start(context)
++        } else {
++            WhaleOverlayService.stop(context)
++        }
++    }
++
++    // Coming back from the system overlay-permission page should refresh the hint.
++    LaunchedEffect(Unit) {
++        overlayAllowed = WhaleOverlayService.canDraw(context)
++    }
++
++    Scaffold(
++        topBar = {
++            LargeFlexibleTopAppBar(
++                title = { Text(stringResource(R.string.setting_page_whale)) },
++                navigationIcon = { BackButton() },
++                scrollBehavior = scrollBehavior,
++                colors = CustomColors.topBarColors,
++            )
++        },
++        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
++    ) { innerPadding ->
++        Column(
++            modifier = Modifier
++                .fillMaxSize()
++                .padding(innerPadding)
++                .verticalScroll(rememberScrollState())
++                .padding(8.dp),
++            verticalArrangement = Arrangement.spacedBy(16.dp),
++        ) {
++            CardGroup {
++                item(
++                    headlineContent = { Text(stringResource(R.string.setting_whale_toggle)) },
++                    supportingContent = {
++                        Text(
++                            stringResource(
++                                if (enabled) R.string.setting_whale_toggle_on_desc
++                                else R.string.setting_whale_toggle_off_desc
++                            )
++                        )
++                    },
++                    leadingContent = {
++                        Icon(
++                            painter = painterResource(R.drawable.ic_whale),
++                            contentDescription = null,
++                        )
++                    },
++                    trailingContent = {
++                        Switch(checked = enabled, onCheckedChange = { apply(it) })
++                    },
++                )
++            }
++
++            if (!overlayAllowed) {
++                CardGroup {
++                    item(
++                        headlineContent = { Text(stringResource(R.string.setting_whale_permission)) },
++                        supportingContent = { Text(stringResource(R.string.setting_whale_permission_desc)) },
++                        onClick = { openOverlaySettings() },
++                    )
++                }
++            }
++
++            CardGroup {
++                item(
++                    headlineContent = { Text(stringResource(R.string.setting_whale_reset_position)) },
++                    supportingContent = { Text(stringResource(R.string.setting_whale_reset_position_desc)) },
++                    onClick = {
++                        WhaleStore.resetPosition(context)
++                        if (enabled) WhaleOverlayService.reposition(context)
++                    },
++                )
++                item(
++                    headlineContent = { Text(stringResource(R.string.setting_whale_about)) },
++                    supportingContent = { Text(stringResource(R.string.setting_whale_about_desc)) },
++                )
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingsSearchIndex.kt b/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingsSearchIndex.kt
+index bb3a7083..d7f3703e 100644
+--- a/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingsSearchIndex.kt
++++ b/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingsSearchIndex.kt
+@@ -86,6 +86,24 @@ fun settingsSearchIndex(developerMode: Boolean): List<SettingsSearchEntry> {
+             groupRes = R.string.setting_page_model_and_services,
+             route = Screen.SettingWeb,
+         ),
++        SettingsSearchEntry(
++            titleRes = R.string.setting_page_mcp_server,
++            descriptionRes = R.string.setting_page_mcp_server_desc,
++            groupRes = R.string.setting_page_model_and_services,
++            route = Screen.SettingMcpServer,
++        ),
++        SettingsSearchEntry(
++            titleRes = R.string.setting_page_whale,
++            descriptionRes = R.string.setting_page_whale_desc,
++            groupRes = R.string.setting_page_model_and_services,
++            route = Screen.SettingWhale,
++        ),
++        SettingsSearchEntry(
++            titleRes = R.string.setting_page_aci,
++            descriptionRes = R.string.setting_page_aci_desc,
++            groupRes = R.string.setting_page_model_and_services,
++            route = Screen.SettingAci,
++        ),
+         SettingsSearchEntry(
+             titleRes = R.string.setting_page_telegram,
+             descriptionRes = R.string.setting_page_telegram_desc,
 diff --git a/app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt b/app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt
 new file mode 100644
-index 00000000..df519a73
+index 00000000..4cadce3e
 --- /dev/null
 +++ b/app/src/main/java/me/rerere/rikkahub/whale/WhaleOverlayService.kt
-@@ -0,0 +1,453 @@
+@@ -0,0 +1,494 @@
 +package me.rerere.rikkahub.whale
 +
 +import android.annotation.SuppressLint
@@ -681,6 +1170,18 @@ index 00000000..df519a73
 +    companion object {
 +        const val ACTION_START = "me.rerere.rikkahub.action.WHALE_START"
 +        const val ACTION_STOP = "me.rerere.rikkahub.action.WHALE_STOP"
++
++        /**
++         * Stop *and* remember it: used by the notification's "turn off" action, where the user
++         * is stating a preference rather than momentarily taking the window down. Without the
++         * flag flip the whale would come back on the next app start and the settings switch
++         * would disagree with reality.
++         */
++        const val ACTION_STOP_AND_DISABLE = "me.rerere.rikkahub.action.WHALE_STOP_AND_DISABLE"
++
++        /** Re-place the window at the saved (or default) corner without touching the flag. */
++        const val ACTION_REPOSITION = "me.rerere.rikkahub.action.WHALE_REPOSITION"
++
 +        const val NOTIFICATION_ID = 2003
 +        const val CHANNEL_ID = "whale_widget"
 +
@@ -694,6 +1195,19 @@ index 00000000..df519a73
 +        fun stop(context: Context) {
 +            context.startService(
 +                Intent(context, WhaleOverlayService::class.java).setAction(ACTION_STOP),
++            )
++        }
++
++        fun stopAndDisable(context: Context) {
++            context.startService(
++                Intent(context, WhaleOverlayService::class.java).setAction(ACTION_STOP_AND_DISABLE),
++            )
++        }
++
++        /** Re-read the saved position and redraw the whale there (used after "reset position"). */
++        fun reposition(context: Context) {
++            context.startService(
++                Intent(context, WhaleOverlayService::class.java).setAction(ACTION_REPOSITION),
 +            )
 +        }
 +
@@ -723,6 +1237,22 @@ index 00000000..df519a73
 +                stopForeground(STOP_FOREGROUND_REMOVE)
 +                stopSelf()
 +                return START_NOT_STICKY
++            }
++
++            ACTION_STOP_AND_DISABLE -> {
++                WhaleStore.setEnabled(this, false)
++                tearDown()
++                stopForeground(STOP_FOREGROUND_REMOVE)
++                stopSelf()
++                return START_NOT_STICKY
++            }
++
++            ACTION_REPOSITION -> {
++                if (canDraw(this) && startForegroundCompat()) {
++                    windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
++                    ensureViews()
++                }
++                return START_STICKY
 +            }
 +        }
 +        if (!canDraw(this)) {
@@ -1038,7 +1568,7 @@ index 00000000..df519a73
 +            .setContentText("小鲸鱼常驻中：点一下就能给正在跑的任务补一句话")
 +            .setOngoing(true)
 +            .setPriority(NotificationCompat.PRIORITY_MIN)
-+            .addAction(0, "藏起来", stopPendingIntent())
++            .addAction(0, "关掉挂件", stopPendingIntent())
 +            .build()
 +        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
 +            ServiceCompat.startForeground(
@@ -1059,7 +1589,7 @@ index 00000000..df519a73
 +    private fun stopPendingIntent(): PendingIntent = PendingIntent.getService(
 +        this,
 +        0,
-+        Intent(this, WhaleOverlayService::class.java).setAction(ACTION_STOP),
++        Intent(this, WhaleOverlayService::class.java).setAction(ACTION_STOP_AND_DISABLE),
 +        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
 +    )
 +
@@ -1248,6 +1778,117 @@ index 00000000..fb47e9fe
 +    <path android:pathData="M19,11.2 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 z" android:fillColor="#FF3A57DE" />
 +    <path android:pathData="M25.5,11.2 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 z" android:fillColor="#FF3A57DE" />
 +</vector>
--- 
-2.53.0.windows.1
-
+diff --git a/app/src/main/res/values-zh/strings.xml b/app/src/main/res/values-zh/strings.xml
+index 18e60b5a..927fbd02 100644
+--- a/app/src/main/res/values-zh/strings.xml
++++ b/app/src/main/res/values-zh/strings.xml
+@@ -844,6 +844,17 @@
+   <string name="setting_page_general_settings">通用设置</string>
+   <string name="setting_page_interaction_notification_settings">互动与通知</string>
+   <string name="setting_page_mcp">MCP</string>
++  <string name="setting_page_whale">补充提示挂件</string>
++  <string name="setting_page_whale_desc">常驻小鲸鱼悬浮窗：点一下，让正在干活的 AI 停下问你有什么要补充的</string>
++  <string name="setting_whale_toggle">小鲸鱼悬浮窗</string>
++  <string name="setting_whale_toggle_on_desc">浮在所有应用之上。点一下就把补充提示递给正在跑的会话。</string>
++  <string name="setting_whale_toggle_off_desc">已关闭：不显示悬浮窗，也没有常驻通知。</string>
++  <string name="setting_whale_permission">显示在其他应用上层</string>
++  <string name="setting_whale_permission_desc">悬浮窗需要这个权限才能浮在别的应用之上，点这里去系统设置里打开。</string>
++  <string name="setting_whale_reset_position">重置位置</string>
++  <string name="setting_whale_reset_position_desc">把鲸鱼放回屏幕右下角</string>
++  <string name="setting_whale_about">关于</string>
++  <string name="setting_whale_about_desc">whale-whisper · RikkaHub 版（第四个宿主）：点一下就去问你有什么要补充的</string>
+   <string name="setting_page_mcp_desc">配置MCP服务器</string>
+   <string name="setting_page_message_display_settings">消息显示</string>
+   <string name="setting_page_model_and_services">模型与服务</string>
+@@ -1490,6 +1501,12 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过
+   <string name="setting_page_permissions_group_special">特殊访问权限</string>
+   <string name="setting_page_permissions_status_auto_granted">自动</string>
+   <string name="setting_page_permissions_status_denied">点击授予</string>
++  <string name="setting_page_permissions_grant_all">一键全部授予</string>
++  <string name="setting_page_permissions_grant_all_desc">先用 Shizuku 静默授予下面所有权限，剩下的用一次系统弹窗补齐。</string>
++  <string name="setting_page_permissions_grant_all_applied">已通过 Shizuku 授予 %1$d 项权限</string>
++  <string name="setting_page_permissions_grant_all_partial">已应用 %1$d / %2$d 项，其余被系统拒绝</string>
++  <string name="setting_page_permissions_grant_all_no_shizuku">Shizuku 未运行，其下权限仍需手动；其余现在弹窗申请。</string>
++  <string name="setting_page_permissions_grant_all_first_failure">首个失败：%1$s</string>
+   <string name="setting_page_permissions_status_granted">已授予</string>
+   <string name="setting_page_scheduled_jobs">定时任务</string>
+   <string name="setting_page_scheduled_jobs_delete">删除</string>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 18b18eb2..646ac832 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -441,6 +441,9 @@
+   <string name="notification_channel_chat_completed">Chat Completed</string>
+   <string name="notification_channel_chat_live_update">Chat Generation Progress</string>
+   <string name="notification_channel_web_server">Web Server</string>
++  <string name="notification_channel_mcp_server">MCP Server</string>
++  <string name="notification_mcp_server_running">MCP Server Running</string>
++  <string name="notification_mcp_server_starting">Starting...</string>
+   <string name="notification_live_update_chip_thinking">Thinking</string>
+   <string name="notification_live_update_chip_tool">Tool</string>
+   <string name="notification_live_update_chip_writing">Writing</string>
+@@ -874,6 +877,17 @@
+   <string name="setting_page_general_settings">General Settings</string>
+   <string name="setting_page_interaction_notification_settings">Interaction &amp;amp; Notifications</string>
+   <string name="setting_page_mcp">MCP</string>
++  <string name="setting_page_whale">Whisper Whale</string>
++  <string name="setting_page_whale_desc">A resident whale overlay: one tap makes the running agent stop and ask what to add</string>
++  <string name="setting_whale_toggle">Whale overlay</string>
++  <string name="setting_whale_toggle_on_desc">Floating above every app. Tap it to hand the running conversation an extra instruction.</string>
++  <string name="setting_whale_toggle_off_desc">Off: no overlay, no notification.</string>
++  <string name="setting_whale_permission">Display over other apps</string>
++  <string name="setting_whale_permission_desc">Required for the whale to float above other apps. Tap to grant it in system settings.</string>
++  <string name="setting_whale_reset_position">Reset position</string>
++  <string name="setting_whale_reset_position_desc">Put the whale back in the bottom-right corner</string>
++  <string name="setting_whale_about">About</string>
++  <string name="setting_whale_about_desc">whale-whisper, RikkaHub edition (fourth host): click to ask what to add</string>
+   <string name="setting_page_mcp_desc">Configure MCP Servers</string>
+   <string name="setting_page_message_display_settings">Message Display</string>
+   <string name="setting_page_model_and_services">Models &amp; Services</string>
+@@ -941,6 +955,24 @@
+   <string name="setting_page_web_server_port_desc">Web server listen port (1024-65535)</string>
+   <string name="setting_page_web_server_start">Start</string>
+   <string name="setting_page_web_server_stop">Stop</string>
++  <string name="setting_page_mcp_server">MCP Server</string>
++  <string name="setting_page_mcp_server_desc">Expose this app\'s agent to other clients over a local MCP endpoint</string>
++  <string name="setting_page_mcp_server_port">Port</string>
++  <string name="setting_page_mcp_server_port_desc">MCP listen port (1024-65535), bound to 127.0.0.1 only</string>
++  <string name="setting_page_mcp_server_token">Bearer token</string>
++  <string name="setting_page_mcp_server_token_desc">Optional. When set, every request must send Authorization: Bearer &lt;token&gt;</string>
++  <string name="setting_page_mcp_server_endpoint">Endpoint</string>
++  <string name="setting_page_mcp_server_endpoint_desc">Point an MCP client at this URL (Streamable HTTP)</string>
++  <string name="setting_page_mcp_server_tools">Tools</string>
++  <string name="setting_page_mcp_server_warning">Prompts arriving here run through this device\'s agent with its tool calls auto-approved. Anyone who can reach this port can drive the device.</string>
++  <string name="setting_page_aci">ACI Endpoint</string>
++  <string name="setting_page_aci_desc">Let an on-device ACI controller (ai.aci.core.ACTION_BIND) drive this app\'s agent</string>
++  <string name="setting_page_aci_enable">Enable ACI endpoint</string>
++  <string name="setting_page_aci_enable_desc">Off by default. When off, every call is refused even if a controller is bound.</string>
++  <string name="setting_page_aci_token">Shared token</string>
++  <string name="setting_page_aci_token_desc">Optional. When set, callers must send it as the _aci_token parameter; when blank, callers are identified by package instead.</string>
++  <string name="setting_page_aci_test">Self-test</string>
++  <string name="setting_page_aci_test_desc">Bind this app\'s own ACI service and run rikka_status through the binder</string>
+   <string name="setting_provider_page_abilities">Abilities</string>
+   <string name="setting_provider_page_add">Add</string>
+   <string name="setting_provider_page_add_model">Add Model</string>
+@@ -1400,6 +1432,12 @@
+   <string name="setting_page_permissions_status_granted">GRANTED</string>
+   <string name="setting_page_permissions_status_auto_granted">AUTO</string>
+   <string name="setting_page_permissions_status_denied">TAP TO GRANT</string>
++  <string name="setting_page_permissions_grant_all">Grant everything at once</string>
++  <string name="setting_page_permissions_grant_all_desc">Applies every permission below over Shizuku in one silent pass, then asks for whatever is left in a single system dialog.</string>
++  <string name="setting_page_permissions_grant_all_applied">Applied %1$d permissions over Shizuku</string>
++  <string name="setting_page_permissions_grant_all_partial">Applied %1$d of %2$d — the rest were refused by the system</string>
++  <string name="setting_page_permissions_grant_all_no_shizuku">Shizuku isn\'t running, so its permissions stay manual. Asking for the rest now.</string>
++  <string name="setting_page_permissions_grant_all_first_failure">First failure: %1$s</string>
+   <string name="setting_provider_delete_title">Remove provider?</string>
+   <string name="setting_provider_delete_body">This will permanently remove %1$s and all its configured models. You can re-add it later.</string>
+   <string name="setting_provider_delete_confirm">Remove</string>
+@@ -1540,6 +1578,8 @@
+   <string name="assistant_page_local_tools_external_storage_desc">Lets file tools work on USB drives, SD cards, Downloads, and cloud storage. Each tree requires a one-time grant via the SAF picker.</string>
+   <string name="assistant_page_local_tools_archive_title">Archive (zip)</string>
+   <string name="assistant_page_local_tools_archive_desc">Create and extract .zip archives directly. No password support in v1. Works on file:// and content:// URIs.</string>
++  <string name="assistant_page_local_tools_build_apk_title">Build APK</string>
++  <string name="assistant_page_local_tools_build_apk_desc">Compile a Java project on the device into a signed, installable APK, offline. The agent writes the sources; the built app runs the entry method it finds. Installs nothing by itself.</string>
+   <string name="assistant_page_local_tools_shizuku_title">Shizuku</string>
+   <string name="assistant_page_local_tools_shizuku_desc">Run shell commands with Shizuku\'s privileges (the shell UID, no root). Requires the Shizuku app installed and running; grant permission from Settings → Shizuku. Approval required per call.</string>
+   <string name="assistant_page_local_tools_section_keyboard">Keyboard control</string>

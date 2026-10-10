@@ -24,16 +24,17 @@ foreground service plus one callback on the generation loop: no Python, no state
 3. 派发 = 在 `WhaleStore` 给该会话置一个待处理标志；气泡依次显示「已通知 AI ✓」→「它马上就抽空来问你」。
 4. `ChatService` 在 `GenerationLoop` 的 `onBeforeModelRequest`（每次模型请求之前，也就是**动作边界**）检查标志；命中就追加一条 user 消息（`WhaleStore.WHISPER_INSTRUCTION`）并清掉标志。
 5. agent 照那条指令调用它自己的 `ask_user` 工具问「有什么要补充的吗？」；用户答完，回答作为工具结果回到上下文，agent 带着补充继续原任务。
+6. 服务的三个动作：`ACTION_START` / `ACTION_STOP`（只停窗口）/ `ACTION_STOP_AND_DISABLE`（停窗口并记住"用户不要了"，通知里的「关掉挂件」用它）/ `ACTION_REPOSITION`（按保存位置重画，重置位置用它）。
 
 一次点击只消费一次（`WhaleStore.consume`）。
 
 ## 安装 / Install
 
-本版是 fork 的一部分（rikkahub-agent **2.6.2-mod** 起内置），没有单独的安装步骤：
+本版是 fork 的一部分（rikkahub-agent **2.6.2-mod** 起内置，**2.6.3-mod** 起在设置里带了开关），没有单独的安装步骤：
 
 ```bash
 # 在 rikkahub-agent 仓库根目录
-git apply rikka/patches/rikkahub-agent-2.6.2-mod.patch
+git apply rikka/patches/rikkahub-agent-2.6.3-mod.patch
 ./gradlew :app:assembleRelease
 adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
@@ -41,7 +42,8 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 - 补丁**不含**随包参考资料库的 19.5MB 资产（`assets/wb-library/`，来自 WorkBuddy 借鉴库的 01–06 + 10 分区）；需要时把它们复制进 `app/src/main/assets/wb-library/`。
 - `assets/default-skills/whale-whisper/` 随包播种（App 启动时 `SkillManager.seedDefaultSkillsIfNeeded`），并由 `WbLibrarySeeder.BUNDLED_SKILL_NAMES` 对该助手自动启用一次。
 - 挂件需要 **SYSTEM_ALERT_WINDOW**（App 清单里本就声明了；系统设置里给它「显示在其他应用上层」）。Android 13+ 还需要通知权限来跑前台服务。
-- 常驻通知里点「藏起来」= 关掉挂件。
+- **起停**：设置 → 补充提示挂件，一个开关就是权威状态（开＝写标志＋起服务，关＝清标志＋停服务，立刻生效、不用重启 App）。设置搜索也能搜到它。
+- 常驻通知里点 **「关掉挂件」** 同样会记住这个选择，下次启动不会自己回来。
 
 ## 用法 / Usage
 
@@ -53,7 +55,8 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 | 几秒内 | agent 在下一个动作边界用 `ask_user` 问「有什么要补充的吗？」→ 你自由输入 |
 | 补充之后 | agent 用一句话说明据此调整了什么，带着补充继续原任务 |
 | **长按** | 点我提问 / 重置位置 / 隐藏小鲸鱼（留一个圆点）/ 关于 |
-| 不想要了 | 常驻通知里点「藏起来」 |
+| 不想要了 | **设置 → 补充提示挂件 → 关**（立刻生效）；或点常驻通知里的「关掉挂件」 |
+| 想放回右下角 | 同一个设置页里点「重置位置」 |
 
 ## 文件 / Files
 
@@ -66,10 +69,13 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 | `app/.../rikkahub/data/ai/GenerationLoop.kt` | `onBeforeModelRequest` 现在可以返回替换后的消息列表 |
 | `app/.../rikkahub/RikkaHubApp.kt` | 开机（用户没关掉时）拉起挂件服务 |
 | `app/src/main/AndroidManifest.xml` | 注册 `WhaleOverlayService`（`specialUse` 前台服务类型） |
+| `app/.../ui/pages/setting/SettingWhalePage.kt` | 设置页：一键起停开关、权限提示、重置位置、关于 |
+| `app/.../ui/pages/setting/SettingPage.kt`、`SettingsSearchIndex.kt`、`RouteActivity.kt` | 设置入口、设置搜索项、导航路由 |
+| `app/src/main/res/values{,-zh}/strings.xml` | 中英两套文案 |
 
 ## 验证状态 / Verification status
 
-**2026-10-09 · vivo V2156FA（Android 11 / API 30）真机**，rikkahub-agent `2.6.2-mod`（versionCode 189）：
+**2026-10-09 · vivo V2156FA（Android 11 / API 30）真机**，rikkahub-agent `2.6.3-mod`（versionCode 190；挂件本身自 2.6.2-mod 起就位）：
 
 | 项 | 结果 | 证据 |
 | --- | --- | --- |
@@ -80,7 +86,12 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 | 随包库落盘 | ✅ | 让设备端 agent 自己调用 `list_files /data/data/excp.rikkahub/files/wb-library/`：9 项（`00-README.md` + 01–06、10 分区 + `.asset-version`） |
 | agent 能读库 | ✅ | 同一次 `read_file` 读出 `00-README.md` 首行 `# WorkBuddy 借鉴库索引` |
 | 五个随包技能已启用 | ✅ | 设备端 agent 自报系统提示里的技能名：`wb-design-verification`、`wb-imagegen-discipline`、`wb-library`、`wb-prompt-patterns`、`whale-whisper` |
-| 与 MCP 共存 | ✅ | 经 `adb forward` + `rikka_status` 往返，返回 `version: 2.6.2-mod` |
+| 与 MCP 共存 | ✅ | 经 `adb forward` + `rikka_status` 往返，返回 `version: 2.6.2-mod`（2.6.3-mod 上仍是同一条链路） |
+| 设置开关：入口可搜到 | ✅ | 设置列表与设置搜索里都有「补充提示挂件」，进入后标题/开关/说明/重置位置/关于全为中文 |
+| 设置开关：**关** | ✅ | 开关变灰、文案切到「已关闭：不显示悬浮窗，也没有常驻通知」、**截图里悬浮窗消失**、`dumpsys activity services` 里 `WhaleOverlayService` 记录消失 |
+| 设置开关：**开** | ✅ | 开关回色、文案切回、**截图里鲸鱼重新出现**、服务回到 `isForeground=true`（通知 id 2003） |
+
+每一步都截图并逐张读图确认（不是只看 dump）。
 
 未单独验证：多个任务同时运行时的选择清单（设备上始终只有一个会话在生成）。
 
