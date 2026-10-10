@@ -4,7 +4,7 @@
 
 > 🐋 **Whisper to your running AI.** Slip an extra instruction to an agent that is already working — one click and the AI pauses to ask "anything to add?", without interrupting the run and without making you wait for it to finish.
 
-[![Hosts](https://img.shields.io/badge/hosts-WorkBuddy%20%C2%B7%20ZCode%20%C2%B7%20DSH%20%C2%B7%20RikkaHub-2f7de1)](#四个宿主--four-hosts) [![MCP Apps](https://img.shields.io/badge/MCP-Apps-8a63d2)](#workbuddy) [![PySide6](https://img.shields.io/badge/UI-PySide6-41cd52)](#workbuddy) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-6b7280)](#workbuddy) [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE)
+[![Hosts](https://img.shields.io/badge/hosts-WorkBuddy%20%C2%B7%20ZCode%20%C2%B7%20DSH%20%C2%B7%20RikkaHub-2f7de1)](#四个宿主--four-hosts) [![MCP Apps](https://img.shields.io/badge/MCP-Apps-8a63d2)](#workbuddy) [![PySide6](https://img.shields.io/badge/UI-PySide6-41cd52)](#workbuddy) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-6b7280)](#workbuddy) [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE) [![M8ven Score](https://m8ven.ai/badge/mcp/elysia-laoda-whale-whisper-1hz853?v=a0e40d92d94ff6a43552fc67a991fc8f)](https://m8ven.ai/mcp/elysia-laoda-whale-whisper-1hz853?s=readme)
 
 一只常驻的小鲸鱼 🐋（可拖动、可换位置、位置自动记忆）。
 任务跑得正欢时你突然想到一句要补充的话？**点一下它，AI 立刻停下来问你：「有什么要补充的吗？」**
