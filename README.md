@@ -4,7 +4,7 @@
 
 > 🐋 **Whisper to your running AI.** Slip an extra instruction to an agent that is already working — one click and the AI pauses to ask "anything to add?", without interrupting the run and without making you wait for it to finish.
 
-[![Hosts](https://img.shields.io/badge/hosts-WorkBuddy%20%C2%B7%20ZCode%20%C2%B7%20DSH%20%C2%B7%20RikkaHub-2f7de1)](#四个宿主--four-hosts) [![MCP Apps](https://img.shields.io/badge/MCP-Apps-8a63d2)](#workbuddy) [![PySide6](https://img.shields.io/badge/UI-PySide6-41cd52)](#workbuddy) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-6b7280)](#workbuddy) [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE) [![M8ven Score](https://m8ven.ai/badge/mcp/elysia-laoda-whale-whisper-1hz853?v=a0e40d92d94ff6a43552fc67a991fc8f)](https://m8ven.ai/mcp/elysia-laoda-whale-whisper-1hz853?s=readme)
+[![Hosts](https://img.shields.io/badge/hosts-WorkBuddy%20%C2%B7%20ZCode%20%C2%B7%20DSH%20%C2%B7%20RikkaHub%20%C2%B7%20ZorvAI-2f7de1)](#五个宿主--five-hosts) [![MCP Apps](https://img.shields.io/badge/MCP-Apps-8a63d2)](#workbuddy) [![PySide6](https://img.shields.io/badge/UI-PySide6-41cd52)](#workbuddy) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-6b7280)](#workbuddy) [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE) [![M8ven Score](https://m8ven.ai/badge/mcp/elysia-laoda-whale-whisper-1hz853?v=a0e40d92d94ff6a43552fc67a991fc8f)](https://m8ven.ai/mcp/elysia-laoda-whale-whisper-1hz853?s=readme)
 
 一只常驻的小鲸鱼 🐋（可拖动、可换位置、位置自动记忆）。
 任务跑得正欢时你突然想到一句要补充的话？**点一下它，AI 立刻停下来问你：「有什么要补充的吗？」**
@@ -14,13 +14,13 @@ A resident whale 🐋 — draggable, rememberable, always at hand.
 Halfway through a long task you remember one more requirement: **click it and the AI immediately stops to ask "anything to add?"**
 No need to interrupt the run, and no need to wait for it to finish.
 
-同一个交互在四个宿主上各有一份原生实现，共享同一套设计约定与中文文案。本仓库同时是四份实现的源码。
+同一个交互在五个宿主上各有一份原生实现，共享同一套设计约定与中文文案。本仓库同时是五份实现的源码。
 
-The same interaction ships as a native implementation for four hosts, sharing one design contract and one set of Chinese copy. This repository is the source of all four.
+The same interaction ships as a native implementation for five hosts, sharing one design contract and one set of Chinese copy. This repository is the source of all five.
 
 ![DSH 挂件](dsh/docs/widget-dark.png)
 
-## 四个宿主 / Four hosts
+## 五个宿主 / Five hosts
 
 | 宿主 | 挂件形态 | 接入方式 | 目录 | 详细文档 |
 | --- | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ The same interaction ships as a native implementation for four hosts, sharing on
 | **ZCode** | PySide6 桌面悬浮窗，跟随 ZCode 窗口 | 5 个外部钩子进程（含硬强制） | `zcode/` | [`zcode/README.md`](zcode/README.md) |
 | **DSH** | DSH 对话界面内常驻挂件（原生 DOM） | 进程内原生 cordis 插件 | `dsh/` | [`dsh/README.md`](dsh/README.md) |
 | **RikkaHub**（Android） | 系统悬浮窗（浮在所有应用之上，原生 View） | 进程内前台服务 + 生成循环边界回调 | `rikka/` | [`rikka/README.md`](rikka/README.md) |
+| **ZorvAI**（Android） | 系统悬浮窗（与 RikkaHub 同形态） | **无钩子**：技能规则每轮自查 + proot 搬运（「点一下立刻」做不到，要即时只能用 token 换） | `zorvai/` | [`zorvai/README.md`](zorvai/README.md) |
 
 | Host | Widget | Wiring | Directory | Docs |
 | --- | --- | --- | --- | --- |
@@ -35,10 +36,11 @@ The same interaction ships as a native implementation for four hosts, sharing on
 | **ZCode** | PySide6 desktop overlay following the ZCode window | 5 external hook processes (with hard enforcement) | `zcode/` | [`zcode/README.md`](zcode/README.md) |
 | **DSH** | resident in-page widget inside the DSH conversation window (plain DOM) | native in-process cordis plugin | `dsh/` | [`dsh/README.md`](dsh/README.md) |
 | **RikkaHub** (Android) | system overlay above every app (native View) | in-process foreground service + a generation-loop boundary callback | `rikka/` | [`rikka/README.md`](rikka/README.md) |
+| **ZorvAI** (Android) | system overlay (same shape as RikkaHub) | **no hooks**: per-turn self-check in the skill + a proot relay (no true "tap → instant"; instantaneity would have to be bought with tokens) | `zorvai/` | [`zorvai/README.md`](zorvai/README.md) |
 
-四份实现共用同一条链路与同一套文案，差别只在"钩子挂在哪里、会话从哪里枚举"。DSH 版把外部进程换成了进程内插件，因此不需要 Python，也不写状态文件；RikkaHub 版把它搬到了 Android 上——悬浮在所有应用之上，点击后用进程内的标志位在**下一个模型请求之前**注入那句提醒。
+五份实现共用同一条链路与同一套文案，差别只在"钩子挂在哪里、会话从哪里枚举"。DSH 版把外部进程换成了进程内插件，因此不需要 Python，也不写状态文件；RikkaHub 版把它搬到了 Android 上——悬浮在所有应用之上，点击后用进程内的标志位在**下一个模型请求之前**注入那句提醒。ZorvAI 版是**唯一宿主侧没有钩子的**：事件采集与读取都做扎实了，但「点击之后 AI 自己醒」做不到，要接近即时只能让 AI 每一步都审查一次请求、**持续消耗 token**——详见 [`zorvai/README.md`](zorvai/README.md)。
 
-All four share one pipeline and one set of copy; they differ only in where hooks are registered and where the session list comes from. The DSH edition replaces the external processes with an in-process plugin, so it needs no Python and writes no state files; the RikkaHub edition carries the same idea to Android — an overlay above every app, whose tap sets an in-process flag consumed right before the next model request.
+All five share one pipeline and one set of copy; they differ only in where hooks are registered and where the session list comes from. The DSH edition replaces the external processes with an in-process plugin, so it needs no Python and writes no state files; the RikkaHub edition carries the same idea to Android — an overlay above every app, whose tap sets an in-process flag consumed right before the next model request. The ZorvAI edition is the **only host without hooks**: capture and reading are solid, but "tap → the AI wakes up by itself" is not achievable; getting close to instant would require the model to review the queue on every step, **continuously burning tokens** — see [`zorvai/README.md`](zorvai/README.md).
 
 ## 它解决什么问题 / What problem it solves
 

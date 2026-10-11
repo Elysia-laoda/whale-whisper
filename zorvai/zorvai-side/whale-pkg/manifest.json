@@ -1,0 +1,28 @@
+{
+  "name": "whale",
+  "version": "1.0.0",
+  "description": "小鲸鱼补充提示挂件（ZorvAI 手机端移植）：悬浮窗点击事件的读取/确认/模拟，让 AI 中途停下来问「有什么要补充的吗？」",
+  "entry": "index.js",
+  "tools": [
+    {
+      "name": "whale_pending",
+      "description": "查未处理的挂件事件（未 ack 且未 done）。参数：limit(可选,默认10)。返回 count / items[id,ts,note,source] / mute 状态。每轮回复前应先调用本工具。",
+      "function": "pending"
+    },
+    {
+      "name": "whale_ack",
+      "description": "标记某挂件事件已处理（去重关键：提问完必须调用，否则会重复提问）。参数：id(必填)",
+      "function": "ack"
+    },
+    {
+      "name": "whale_simulate",
+      "description": "手动产生一个挂件事件（语义等价于点一下屏幕上的小鲸鱼，用于联调/演示）。参数：note(可选,补充说明) / source(可选)",
+      "function": "simulate"
+    },
+    {
+      "name": "whale_state",
+      "description": "查看或操作挂件状态。参数：reset(清空队列) / mute(true=本会话静音,false=恢复) / sync(把公共区 /sdcard/qshare/whale/pending.json 的事件并入工作区) / probe(探测沙箱文件能力)",
+      "function": "state"
+    }
+  ]
+}

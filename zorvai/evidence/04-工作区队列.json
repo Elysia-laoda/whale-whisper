@@ -1,0 +1,1 @@
+{"events": [{"id": "w1791529590337", "ts": 1791529590337, "source": "proot-click", "state": "done", "note": "（联调）点了小鲸鱼"}, {"id": "w1791698791960", "ts": 1791698791960, "source": "android-overlay", "state": "done", "note": "用户点击了小鲸鱼"}], "acked": ["w1791698791960", "w1791529590337"], "mute": false, "updatedAt": 1791699119603}

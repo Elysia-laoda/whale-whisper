@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""模拟点击小鲸鱼：往公共区追加一个补充提示事件"""
+import json, os, sys, time
+P = "/sdcard/qshare/whale/pending.json"
+os.makedirs(os.path.dirname(P), exist_ok=True)
+try:
+    d = json.load(open(P, encoding="utf-8"))
+except Exception:
+    d = {"events": [], "acked": [], "mute": False}
+now = int(time.time() * 1000)
+d.setdefault("events", []).append({
+    "id": "w%d" % now, "ts": now, "source": "proot-click", "state": "pending",
+    "note": sys.argv[1] if len(sys.argv) > 1 else "（联调）用户点击了小鲸鱼"})
+json.dump(d, open(P, "w", encoding="utf-8"), ensure_ascii=False)
+print("clicked id=w%d" % now)

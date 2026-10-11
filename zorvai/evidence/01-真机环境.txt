@@ -1,0 +1,11 @@
+# 真机环境事实（proot，2026-10-11 14:23:10）
+uname: aarch64
+node: v22.23.2
+npm: 10.9.8
+python: Python 3.12.3
+--- 桥脚本 ---
+-rwx------. 1 root root  660 Oct  9 15:06 /usr/local/bin/whale-click
+-rwx------. 1 root root 1021 Oct  9 15:06 /usr/local/bin/whale-sync
+--- 公共区事件文件 ---
+total 4
+-rw-rw----. 1 root android_group_9997 38 Oct 11 14:11 pending.json

@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""把公共区事件并入 ZorvAI 工作区队列（proot 是唯一能同时碰两边的进程）"""
+import json, os
+Q = "/sdcard/qshare/whale/pending.json"
+W = "/sdcard/Android/data/com.ai.assistance.quro/files/QuroWorkspace/whale-whisper/state/pending.json"
+def load(p, d):
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return d
+qd = load(Q, {"events": [], "acked": [], "mute": False})
+wd = load(W, {"events": [], "acked": [], "mute": False})
+seen = set(e.get("id") for e in wd.get("events", []))
+added = 0
+for e in qd.get("events", []):
+    if e.get("id") and e["id"] not in seen:
+        wd.setdefault("events", []).append(e); added += 1
+acked = set(wd.get("acked", []))
+live = [e for e in wd["events"] if e.get("id") not in acked and e.get("state") != "done"]
+os.makedirs(os.path.dirname(W), exist_ok=True)
+json.dump(wd, open(W, "w", encoding="utf-8"), ensure_ascii=False)
+print("synced: +%d, queue=%d, acked=%d" % (added, len(live), len(acked)))

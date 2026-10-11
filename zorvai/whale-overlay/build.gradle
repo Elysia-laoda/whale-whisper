@@ -1,0 +1,4 @@
+// AGP 版本取本机已缓存的那一个（Gradle 9.5.0 + AGP 9.3.1），出包不需要联网。
+plugins {
+    id 'com.android.application' version '9.3.1' apply false
+}

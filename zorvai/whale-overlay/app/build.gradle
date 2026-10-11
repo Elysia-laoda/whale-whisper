@@ -1,0 +1,48 @@
+plugins { id 'com.android.application' }
+
+// 签名：密码只存在于工作区之外的那个 properties 文件中，工程里不留任何口令。
+// 位置可用环境变量 WHALE_KEYSTORE_PROPS 覆盖；文件不存在时退回 debug 签名，保证还能出包。
+def ksProps = new Properties()
+def ksFile = file(System.getenv('WHALE_KEYSTORE_PROPS') ?: 'D:/android/keys/whale-release.properties')
+def hasReleaseKey = ksFile.isFile()
+if (hasReleaseKey) {
+    ksFile.withInputStream { ksProps.load(it) }
+}
+
+android {
+    namespace 'com.zorv.whale'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.zorv.whale"
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName "1.1.1"
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(ksProps['storeFile'])
+                storePassword ksProps['storePassword']
+                keyAlias ksProps['keyAlias']
+                keyPassword ksProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint { abortOnError false }
+}
