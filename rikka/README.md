@@ -65,7 +65,9 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 | `app/.../rikkahub/whale/WhaleOverlayService.kt` | 悬浮窗、拖动、气泡、菜单、派发、前台服务通知 |
 | `app/.../rikkahub/whale/WhaleStore.kt` | 每会话待处理标志 + UI 偏好 + 注入文案 |
 | `app/src/main/res/drawable/ic_whale.xml` | 原创鲸鱼矢量（与 `dsh/icon.svg` 同一份几何） |
-| `app/.../rikkahub/service/ChatService.kt` | `activeGeneratingConversations()` + 动作边界注入 |
+| `app/.../rikkahub/service/ChatService.kt` | `activeGeneratingConversations()`（派发目标枚举；注入已改由插件完成） |
+| `app/.../rikkahub/data/ai/hooks/AgentHooks.kt` | 钩子总线（pre-step / pre-tool / post-tool），2.6.4-mod 起 |
+| `app/.../rikkahub/data/ai/hooks/WhaleWhisperPlugin.kt` | 挂件的 pre-step 插件：消费待处理标志并注入那句提醒 |
 | `app/.../rikkahub/data/ai/GenerationLoop.kt` | `onBeforeModelRequest` 现在可以返回替换后的消息列表 |
 | `app/.../rikkahub/RikkaHubApp.kt` | 开机（用户没关掉时）拉起挂件服务 |
 | `app/src/main/AndroidManifest.xml` | 注册 `WhaleOverlayService`（`specialUse` 前台服务类型） |
