@@ -34,6 +34,19 @@ ZorvAI has **no external event injection**: no `PostToolUse` / `Stop` like WorkB
 | Latency | next tool call | next tool call | next action boundary | before the next model request | **next turn (only after the user speaks again)** |
 | Cost | none | none | none | none | **instantaneity requires a per-step review that burns tokens** |
 
+## 插件直调（可选增强）/ Plugin bridge (optional)
+
+除文件桥之外，本目录还带一个跑在宿主进程内的 APK 插件 `plugin-whale/`：
+它把事件直接注入**本轮工作副本**（`liveBuffers[convId]`，`role=user` + `hidden=true`），并在会话空闲时用隐藏消息唤醒一轮。
+
+实测结论：采集 / 注入 / 组装 / 归一化 / 序列化五段全部验证通过，**唯独时序无法绕过** ——
+一轮的模型请求在注入之前已构建，因此本轮读不到，只能等下一轮。完整证据与复现见
+[`docs/插件直调链路实测.md`](docs/插件直调链路实测.md)，构建与安装见 [`plugin-whale/README.md`](plugin-whale/README.md)。
+
+An optional APK plugin that runs inside the host process: it injects the event straight into the current
+turn's buffer and wakes a turn when the chat is idle. Every stage is verified; the only unsolvable part
+without host support is the timing — a turn's model request is already built before the injection.
+See [`docs/插件直调链路实测.md`](docs/插件直调链路实测.md) for evidence.
 ## 三段桥 / The three-stage bridge
 
 ```
