@@ -4,23 +4,29 @@
  *
  *   node scripts/install.mjs                       # 装进 $DSH_PROFILE（默认 desktop）
  *   node scripts/install.mjs --profile web         # 装进指定档案
- *   node scripts/install.mjs --home D:\\dshhome    # 指定 DSH_HOME
- *   node scripts/install.mjs --link                # 软链而不是复制（改代码免重装）
+ *   node scripts/install.mjs --home D:\dshhome     # 指定 DSH_HOME
  *   node scripts/install.mjs --dry-run             # 只说不做
+ *   node scripts/install.mjs --no-pnpm             # 不跑 pnpm（lockfile 会过期，慎用）
+ *   node scripts/install.mjs --copy                # 复制而非链接（临时调试用，会被 pnpm 回收）
  *   node scripts/install.mjs --json                # 输出机器可读结果
  *
- * 做两件事（都不碰会被重写的 cordis.yml）：
- *   1. 把包放进 <profile>/node_modules/dsh-whisper-whale；
+ * 做四件事（都不碰会被重写的 cordis.yml）：
+ *   1. 在 <profile>/node_modules/dsh-whisper-whale 建目录联接 → 本目录；
  *   2. 把包名追加进 <profile>/package.json 的 dsh.profile.bundles，
- *      启动时会自动叠加本包的 cordis.patch.yml（插入 loader entry）。
+ *      启动时会自动叠加本包的 cordis.patch.yml（插入 loader entry）；
+ *   3. 在 <profile>/package.json 的 dependencies 里写 `link:<本目录>`；
+ *   4. 跑一次 pnpm install，把依赖落进 pnpm-lock.yaml。
+ *
+ * 第 3、4 步不是可选项：DSH 更新时会按 lockfile 回收 node_modules，没有依赖记录的
+ * 插件会被当作多余目录删掉 —— bundles 里的注册还在，于是加载器找不到包、插件静默消失。
  * 每个被改的文件先备份成 .bak-<时间戳>。装完需要重启 DSH 生效。
  */
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  PACKAGE_NAME, addBundle, parseArgv, placePackage, readJson,
-  resolveHome, resolveProfileDir, resolveProfileName, timestamp,
+  PACKAGE_NAME, addBundle, addDependency, parseArgv, placePackage, readJson,
+  resolveHome, resolveProfileDir, resolveProfileName, runPnpmInstall, timestamp,
 } from './profile-io.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +40,8 @@ async function main() {
   const manifestPath = join(profileDir, 'package.json');
   const dryRun = options['dry-run'] === true;
   const asJson = options.json === true;
+  const useLink = options.copy !== true;
+  const runPnpm = options['no-pnpm'] !== true;
 
   const report = { home, profile, profileDir, sourceDir, dryRun, steps: [], ok: false, warnings: [] };
 
@@ -46,19 +54,21 @@ async function main() {
     return finish(report, asJson, 1);
   }
 
-  // 先读一遍，确认它确实是个 DSH 档案，避免写错目录。
   const manifest = readJson(manifestPath);
   if (!manifest?.dsh) report.warnings.push('这个 package.json 里没有 dsh 段，可能不是 DSH 档案，仍按 --profile 指定的位置继续');
+  if (!useLink) report.warnings.push('--copy 是临时调试模式：复制出来的目录没有依赖记录，DSH 更新时会被 pnpm 回收');
 
   if (dryRun) {
-    report.steps.push({ action: 'place-package', target: join(profileDir, 'node_modules', PACKAGE_NAME), mode: options.link ? 'link' : 'copy' });
+    report.steps.push({ action: 'place-package', target: join(profileDir, 'node_modules', PACKAGE_NAME), mode: useLink ? 'link' : 'copy' });
     report.steps.push({ action: 'add-bundle', manifest: manifestPath, bundle: PACKAGE_NAME });
+    if (useLink) report.steps.push({ action: 'add-dependency', manifest: manifestPath, specifier: 'link:' + sourceDir.replace(/\\/g, '/') });
+    if (runPnpm && useLink) report.steps.push({ action: 'pnpm-install', profileDir });
     report.ok = true;
     return finish(report, asJson, 0);
   }
 
   const suffix = timestamp();
-  const placed = placePackage(sourceDir, profileDir, { link: options.link === true });
+  const placed = placePackage(sourceDir, profileDir, { link: useLink });
   report.steps.push({ action: 'place-package', target: placed.target, mode: placed.mode });
 
   const bundleResult = addBundle(manifestPath, suffix);
@@ -69,6 +79,27 @@ async function main() {
     backup: bundleResult.changed ? manifestPath + '.bak-' + suffix : null,
     bundles: bundleResult.bundles,
   });
+
+  if (useLink) {
+    const depResult = addDependency(manifestPath, sourceDir, suffix);
+    report.steps.push({
+      action: 'add-dependency',
+      manifest: manifestPath,
+      changed: depResult.changed,
+      specifier: depResult.specifier,
+      backup: depResult.changed ? manifestPath + '.bak-' + suffix : null,
+    });
+
+    if (runPnpm) {
+      const pnpmResult = runPnpmInstall(profileDir);
+      report.steps.push({ action: 'pnpm-install', ok: pnpmResult.ok, output: pnpmResult.output ?? '' });
+      if (!pnpmResult.ok) {
+        report.warnings.push('pnpm install 没跑成功，lockfile 可能是旧的、更新时会出问题；请手动在档案目录执行一次 pnpm install');
+      }
+    } else {
+      report.warnings.push('已跳过 pnpm install（--no-pnpm）：lockfile 没更新，DSH 更新时可能失败或再次回收本插件');
+    }
+  }
 
   report.ok = true;
   return finish(report, asJson, 0);
@@ -91,6 +122,14 @@ function finish(report, asJson, code) {
       lines.push(step.changed
         ? `   · 已追加到 dsh.profile.bundles，原文件备份为 ${step.backup}`
         : '   · dsh.profile.bundles 里已经有了，跳过');
+    }
+    if (step.action === 'add-dependency') {
+      lines.push(step.changed
+        ? `   · 已写入 dependencies：${step.specifier}`
+        : `   · dependencies 里已经是 ${step.specifier}，跳过`);
+    }
+    if (step.action === 'pnpm-install') {
+      lines.push(step.ok ? '   · pnpm install 完成，lockfile 已更新' : '   · pnpm install 失败');
     }
   }
   for (const warning of report.warnings) lines.push('   ⚠ ' + warning);

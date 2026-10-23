@@ -44,15 +44,19 @@ node dsh/scripts/install.mjs          # 装进 $DSH_PROFILE（默认 desktop）
 
 **Quit DSH completely and start it again**; the whale appears at the bottom-right of the conversation window.
 
-安装脚本只做两件事，每个被改动的文件都先备份成 `.bak-<时间戳>`：
+安装脚本做四件事，每个被改动的文件都先备份成 `.bak-<时间戳>`：
 
-1. 把包复制到 `<DSH_HOME>/profiles/<profile>/node_modules/dsh-whisper-whale`；
-2. 把 `dsh-whisper-whale` 追加进该档案 `package.json` 的 `dsh.profile.bundles`。
+1. 在 `<DSH_HOME>/profiles/<profile>/node_modules/dsh-whisper-whale` 建一个**目录联接**指向本目录；
+2. 把 `dsh-whisper-whale` 追加进该档案 `package.json` 的 `dsh.profile.bundles`；
+3. 在该档案的 `dependencies` 里写一条 `link:<本目录>`；
+4. 在档案目录跑一次 `pnpm install`，把它落进 `pnpm-lock.yaml`。
 
-The installer does exactly two things, backing up every file it touches to `.bak-<timestamp>`:
+The installer does four things, backing up every file it touches to `.bak-<timestamp>`:
 
-1. copies the package into `<DSH_HOME>/profiles/<profile>/node_modules/dsh-whisper-whale`;
-2. appends `dsh-whisper-whale` to that profile's `dsh.profile.bundles` in `package.json`.
+1. links `<DSH_HOME>/profiles/<profile>/node_modules/dsh-whisper-whale` to this directory;
+2. appends `dsh-whisper-whale` to that profile's `dsh.profile.bundles`;
+3. adds a `link:<this directory>` entry to that profile's `dependencies`;
+4. runs `pnpm install` in the profile directory so the entry lands in `pnpm-lock.yaml`.
 
 > **为什么不改 `cordis.yml`？** DSH 每次启动都会重新生成 `<profile>/cordis.yml`（文件里就写着 "Edit cordis.patch.yml, not this file"）。真正的输入顺序是 `bundles` → `cordis.patch.yml` → `$DSH_HOME/cordis.patch.yml` → `--patch`。本包的 `cordis.patch.yml` 会插入一行 loader entry，所以进 bundles 就够了——安装不会被下次启动覆盖，也不需要动用户自己的 patch 文件。
 
@@ -61,14 +65,20 @@ The installer does exactly two things, backing up every file it touches to `.bak
 ```bash
 node dsh/scripts/install.mjs --profile web       # 装进别的档案 / another profile
 node dsh/scripts/install.mjs --home D:\dshhome    # 指定 DSH_HOME / another DSH_HOME
-node dsh/scripts/install.mjs --link              # 软链而不是复制 / symlink instead of copy
+node dsh/scripts/install.mjs --copy              # 复制而非链接（临时调试，会被 pnpm 回收）/ copy instead of link (temporary)
 node dsh/scripts/install.mjs --dry-run           # 只说不做 / plan only
 node dsh/scripts/uninstall.mjs                   # 卸载，参数相同 / uninstall, same flags
 ```
 
-> 在档案目录里跑过 `pnpm install` 之后，pnpm 可能会剪掉不在 lockfile 里的包目录——重跑一次安装即可。
+> **第 3、4 步不是可选项。** DSH 更新时会按 lockfile 回收 `node_modules`：任何"目录在 node_modules 里、`dependencies` 里却没有记录"的插件都会被当成多余目录删掉。此时 `bundles` 里的注册还在，加载器却找不到包，插件就**静默消失**（2026-10 的 DSH 0.2.0→0.2.1 升级踩过一次，小鲸鱼就是这么没的）。所以安装必须同时写依赖并落 lockfile；只写 package.json 不跑 pnpm 也不行——更新若用 `--frozen-lockfile`，lockfile 过期会让整个档案的依赖安装失败。
+>
+> 同理，`--copy` 模式（复制目录、不写依赖）只适合临时调试，别长期用。
+>
+> If the whale disappears after a DSH update, run `node dsh/scripts/install.mjs` again — the profile's dependency entry was likely pruned. From this version on the installer writes it for you.
 
-> After a `pnpm install` inside the profile directory, pnpm may prune packages missing from its lockfile — just run the installer again.
+> **Steps 3 and 4 are not optional.** A DSH update reconciles `node_modules` against the lockfile: any plugin that exists only as a directory in `node_modules`, with no record in `dependencies`, is treated as an extraneous directory and deleted. The `bundles` entry survives, so the loader cannot resolve the package and the plugin **disappears silently** — which is exactly what happened during the 0.2.0 → 0.2.1 update in October 2026. Writing the dependency and refreshing the lockfile are both required; editing `package.json` without running pnpm is not enough either, because a `--frozen-lockfile` install then fails on the outdated lockfile.
+>
+> `--copy` (copy files, no dependency record) is for temporary debugging only.
 
 ## 用法 / Usage
 

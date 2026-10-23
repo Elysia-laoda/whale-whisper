@@ -48,7 +48,7 @@ for (const file of ['package.json', 'cordis.patch.yml', 'index.js']) {
 }
 
 // 3) 装本插件，并把驱动排在它前面
-const install = spawnSync(process.execPath, [join(packageRoot, 'scripts/install.mjs'), '--home', home, '--profile', profile, '--link', '--json'], { encoding: 'utf8' });
+const install = spawnSync(process.execPath, [join(packageRoot, 'scripts/install.mjs'), '--home', home, '--profile', profile, '--json'], { encoding: 'utf8' });
 if (install.status !== 0) fail('安装插件失败：' + (install.stderr || install.stdout));
 
 const manifestPath = join(profileDir, 'package.json');

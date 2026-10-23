@@ -164,7 +164,11 @@ node dsh/scripts/install.mjs        # 装进 $DSH_PROFILE（默认 desktop）
 
 装完 **完全退出并重开 DSH**，对话窗口右下角就会出现小鲸鱼。不需要 Python，也没有额外常驻进程。
 
+> 安装会写一条 `link:` 依赖并跑一次 `pnpm install`。这一步不能省：DSH 更新时会按 lockfile 回收 `node_modules`，没有依赖记录的插件会被静默删掉（小鲸鱼消失）。万一还是消失了，重跑一次安装即可。
+
 **Quit DSH completely and start it again**; the whale appears at the bottom-right of the conversation window. No Python, no extra resident process.
+
+> The installer writes a `link:` dependency and runs `pnpm install`. That step matters: a DSH update reconciles `node_modules` against the lockfile, so a plugin with no dependency record is silently deleted (and the whale vanishes). If that ever happens, re-run the installer.
 
 常用参数、`ctx.whisperWhale` 服务与回环路由见 [`dsh/README.md`](dsh/README.md)。
 

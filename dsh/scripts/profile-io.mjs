@@ -11,8 +11,17 @@
  * 所以安装 = 把包放进 `<profile>/node_modules/` + 把它追加进 bundles。
  * 不去碰 cordis.yml（下次启动会被重写，改了也没用）。
  *
+ * **还有一条是踩出来的**：DSH 更新时会按 lockfile 回收 `node_modules`，任何"只在
+ * node_modules 里有个目录、package.json 的 dependencies 里却没有记录"的插件都会被剪掉
+ * （bundles 里的注册还在，于是加载器找不到包、插件静默消失）。所以安装还必须：
+ *   3. 在 dependencies 里写一条 `link:<源目录>`；
+ *   4. 跑一次 pnpm install，把这件事落进 pnpm-lock.yaml。
+ * 只写 dependencies 不落 lockfile 也不行 —— 更新若用 `--frozen-lockfile` 会因 lockfile
+ * 过期而整条安装失败。
+ *
  * @module dsh-whisper-whale/scripts/profile-io
  */
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, lstatSync, readdirSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -92,7 +101,12 @@ export function writeJson(file, value, backupSuffix) {
 }
 
 /**
- * 把包里该发布的文件复制（或链接）到 profile 的 node_modules。
+ * 把包放进 profile 的 node_modules。默认建目录联接（走 pnpm 的 link 协议）。
+ *
+ * 默认必须是链接而不是复制：复制出来的目录没有依赖记录，DSH 下次更新时会被 pnpm
+ * 当作"多余目录"回收掉，插件就静默消失了（2026-10 真的发生过一次）。
+ * `options.link === false` 仍可用，但只适合临时调试。
+ *
  * @returns {{target:string, mode:'link'|'copy'}}
  */
 export function placePackage(sourceDir, profileDir, options = {}) {
@@ -101,7 +115,7 @@ export function placePackage(sourceDir, profileDir, options = {}) {
   if (existsSync(target) || isLink(target)) {
     removeTree(target);
   }
-  if (options.link) {
+  if (options.link !== false) {
     symlinkSync(sourceDir, target, 'junction');
     return { target, mode: 'link' };
   }
@@ -115,6 +129,69 @@ export function placePackage(sourceDir, profileDir, options = {}) {
 
 export function isLink(path) {
   try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
+}
+
+/** 把绝对路径转成 pnpm 认的 POSIX 形式（反斜杠在 link: 里会被当成转义）。 */
+export function toPosixPath(value) {
+  return value.replace(/\\/g, '/');
+}
+
+/** 该写进 dependencies 的说明符。 */
+export function linkSpecifier(sourceDir) {
+  return 'link:' + toPosixPath(resolve(sourceDir));
+}
+
+/**
+ * 把本包登记进 profile 的 `dependencies`（`link:<源目录>`，幂等）。
+ *
+ * 这是"更新之后插件还在"的关键：没有依赖记录的包会被 pnpm 按 lockfile 回收。
+ * @returns {{changed:boolean, specifier:string}}
+ */
+export function addDependency(manifestPath, sourceDir, backupSuffix) {
+  const manifest = readJson(manifestPath);
+  if (!manifest) throw new Error('找不到 profile 的 package.json：' + manifestPath);
+  const specifier = linkSpecifier(sourceDir);
+  manifest.dependencies ??= {};
+  if (manifest.dependencies[PACKAGE_NAME] === specifier) return { changed: false, specifier };
+  manifest.dependencies[PACKAGE_NAME] = specifier;
+  manifest.dependencies = Object.fromEntries(Object.entries(manifest.dependencies).sort(([a], [b]) => a.localeCompare(b)));
+  writeJson(manifestPath, manifest, backupSuffix);
+  return { changed: true, specifier };
+}
+
+/** 从 `dependencies` 里摘掉本包（幂等）。 */
+export function removeDependency(manifestPath, backupSuffix) {
+  const manifest = readJson(manifestPath);
+  if (!manifest?.dependencies || !(PACKAGE_NAME in manifest.dependencies)) return { changed: false };
+  delete manifest.dependencies[PACKAGE_NAME];
+  writeJson(manifestPath, manifest, backupSuffix);
+  return { changed: true };
+}
+
+/**
+ * 在 profile 目录里跑一次 `pnpm install`，让 dependencies 的改动落进 pnpm-lock.yaml
+ * 并让 node_modules 处于 pnpm 认可的状态。
+ *
+ * 为什么要跑：只改 package.json 不跑 pnpm，lockfile 会过期；DSH 更新若用
+ * `--frozen-lockfile`，整个档案的依赖安装都会失败。找不到 pnpm 就返回失败让调用方提醒
+ * 用户手动跑，不抛错。
+ *
+ * @returns {{ok:boolean, skipped?:boolean, output?:string}}
+ */
+export function runPnpmInstall(profileDir) {
+  // Windows 上 pnpm 是 .cmd，只能经 shell 启动；用 cmd /c 包一层，避免
+  // spawn 的 shell:true + args 组合（Node 会为此报 DEP0190 安全弃用告警）。
+  const args = ['install', '--reporter=append-only'];
+  const command = process.platform === 'win32' ? 'cmd.exe' : 'pnpm';
+  const argv = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm ' + args.join(' ')] : args;
+  const result = spawnSync(command, argv, {
+    cwd: profileDir,
+    encoding: 'utf8',
+    timeout: 10 * 60 * 1000,
+  });
+  if (result.error) return { ok: false, output: String(result.error.message ?? result.error) };
+  const output = ((result.stdout ?? '') + (result.stderr ?? '')).trim();
+  return { ok: result.status === 0, output: output.split(/\r?\n/).slice(-6).join('\n') };
 }
 
 /**
