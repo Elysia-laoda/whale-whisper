@@ -176,10 +176,45 @@ test('右键弹菜单，菜单里能隐藏小鲸鱼并留下一个回来的小�
 
   assert.equal(app.q('[data-dshww="root"]').style.display, 'none');
   assert.ok(app.q('.dshww-tab').classList.contains('dshww-on'));
-  assert.equal(app.window.localStorage.getItem('dshWhisperWhale.hidden'), '1');
+  assert.equal(app.window.localStorage.getItem('dshWhisperWhale.hidden.v2'), '1');
 
   app.q('.dshww-tab').dispatchEvent(new app.window.MouseEvent('click', { bubbles: true }));
   assert.equal(app.q('[data-dshww="root"]').style.display, '');
+});
+
+test('连点两下（dblclick）不会把挂件藏起来 —— 手快不该等于隐藏', async () => {
+  const app = mount({
+    routes: {
+      '/whisper-whale/targets': { ok: true, targets: [{ id: 's-1', title: '写文档' }] },
+      '/whisper-whale/click': { ok: true, eventId: 'w-1', target: { id: 's-1' } },
+      '/whisper-whale/state': { ok: true, status: { phase: 'queued' } },
+    },
+  });
+  const root = app.q('[data-dshww="root"]');
+  for (let i = 0; i < 3; i += 1) clickWhale(app.window, app.q);
+  app.q('.dshww-btn').dispatchEvent(new app.window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+  await app.flush();
+
+  assert.equal(root.style.display, '', '挂件必须还在');
+  assert.equal(app.q('.dshww-tab').classList.contains('dshww-on'), false, '不该亮起"回来"的小圆点');
+  assert.notEqual(app.window.localStorage.getItem('dshWhisperWhale.hidden.v2'), '1', '不该把隐藏状态写成真（启动时会写 0，那是正常的）');
+});
+
+test('连点只派发一次 —— 心急点三下不该产生三条事件', async () => {
+  const app = mount({
+    routes: {
+      '/whisper-whale/targets': { ok: true, targets: [{ id: 's-1', title: '写文档' }] },
+      '/whisper-whale/click': { ok: true, eventId: 'w-1', target: { id: 's-1' } },
+      '/whisper-whale/state': { ok: true, status: { phase: 'queued' } },
+    },
+  });
+  clickWhale(app.window, app.q);
+  clickWhale(app.window, app.q);
+  clickWhale(app.window, app.q);
+  await app.flush();
+
+  const clicks = app.calls.filter((c) => c.path === '/whisper-whale/click');
+  assert.equal(clicks.length, 1, '并发点击要合并成一次，实际 ' + clicks.length + ' 次');
 });
 
 test('插件卸载（ctx.effect 的 disposer）会把挂件从页面上摘干净', () => {

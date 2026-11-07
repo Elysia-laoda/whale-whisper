@@ -22,7 +22,9 @@
       var NS = 'dshww';
       var PREFIX = '/whisper-whale';
       var LS_POS = 'dshWhisperWhale.pos';
-      var LS_HIDDEN = 'dshWhisperWhale.hidden';
+      // 键名带 .v2：旧键里的 "已隐藏" 多是双击误触留下的，升级时忽略一次，
+      // 让中招的人重新看到鲸鱼（隐藏状态本身仍然跨刷新记住）。
+      var LS_HIDDEN = 'dshWhisperWhale.hidden.v2';
       var MAX_DRAG_SLOP = 5; // px：超过这个位移就算拖动，不算点击
       var POLL_MS = 1500;
       var POLL_BUDGET_MS = 3 * 60 * 1000;
@@ -117,12 +119,12 @@
           '.' + NS + '-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;',
           'padding:7px 10px;border-radius:8px;cursor:pointer;font:inherit;}',
           '.' + NS + '-menu button:hover{background:' + hover + ';}',
-          '.' + NS + '-tab{position:fixed;z-index:2147483000;right:8px;bottom:8px;width:20px;height:20px;border-radius:50%;',
-          'border:1px solid ' + border + ';background:' + surface + ';cursor:pointer;opacity:.42;padding:0;',
+          '.' + NS + '-tab{position:fixed;z-index:2147483000;right:8px;bottom:8px;width:24px;height:24px;border-radius:50%;',
+          'border:1px solid ' + border + ';background:' + surface + ';cursor:pointer;opacity:.78;padding:0;',
           'display:none;align-items:center;justify-content:center;font-size:11px;line-height:1;}',
           '.' + NS + '-tab.' + NS + '-on{display:flex;}',
           '.' + NS + '-tab:hover{opacity:1;}',
-          '.' + NS + '-tab svg{width:14px;height:14px;display:block;}'
+          '.' + NS + '-tab svg{width:18px;height:18px;display:block;}'
         ].join('');
       }
 
@@ -203,7 +205,8 @@
         pollTimer: null,
         pollUntil: 0,
         spot: 0,
-        busy: false
+        busy: false,
+        clicking: false // 一次点击还在路上时挡住后续点击
       };
 
       var dom = {};
@@ -349,19 +352,25 @@
 
       /** 点一下：0 个在跑 → 提示；1 个 → 直接派发；多个 → 先选。 */
       function onWhaleClick() {
+        // 连点就只算一次：避免一次心急点出三条事件、三串气泡。
+        if (state.clicking || state.busy) return;
+        state.clicking = true;
         hideMenu();
+        var settle = function () { state.clicking = false; };
         api('/targets').then(function (res) {
           if (res.status === 404 || !res.payload || res.payload.ok !== true) {
             setBubble(OFFLINE_HINT, 4200);
-            return;
+            return settle();
           }
           var targets = res.payload.targets || [];
           renderBadge(targets.length);
-          if (targets.length === 0) { setBubble(IDLE_HINT, 3600); return; }
+          if (targets.length === 0) { setBubble(IDLE_HINT, 3600); return settle(); }
+          // 派发本身还有一次 POST，期间由 state.busy 继续挡住连点。
+          settle();
           if (targets.length === 1) { clickFor(targets[0]); return; }
           showPicker(targets, clickFor);
           setBubble(PICK_HINT, 3200);
-        }).catch(function () { setBubble(OFFLINE_HINT, 4200); });
+        }).catch(function () { setBubble(OFFLINE_HINT, 4200); settle(); });
       }
 
       function toggleMute() {
@@ -519,7 +528,9 @@
           ev.preventDefault();
           showMenu(ev.clientX, ev.clientY);
         });
-        dom.stage.addEventListener('dblclick', function () { setHidden(true); });
+        // 曾经这里绑了「双击隐藏」。它和主操作（点一下通知 AI）抢同一个手势：
+        // 用户心急连点两下就触发 dblclick，挂件直接消失，还写进了 localStorage。
+        // 隐藏只留在右键菜单里。
       }
 
       /* ─────────────────────────── 生命周期 ─────────────────────────── */

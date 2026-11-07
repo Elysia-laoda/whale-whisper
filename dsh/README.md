@@ -90,7 +90,7 @@ node dsh/scripts/uninstall.mjs                   # 卸载，参数相同 / unins
 | 几秒内 | AI 调用 `ask_user_question` 问「有什么要补充的吗？」→ 你自由输入 |
 | 补充之后 | AI 用一句话说明据此调整了什么，带着补充继续原任务 |
 | **右键** | 点我提问 / 重置位置 / 本对话不再理会挂件 / 隐藏小鲸鱼 / 关于 |
-| **双击** | 藏起小鲸鱼，右下角留一个圆点，点一下回来 |
+| **隐藏** | 右键 →「隐藏小鲸鱼」，右下角留一个圆点，点一下回来 |
 | 不想要了 | 说一句「关掉挂件」，本会话立刻闭嘴 |
 
 | You do | What happens |
@@ -101,7 +101,7 @@ node dsh/scripts/uninstall.mjs                   # 卸载，参数相同 / unins
 | Within seconds | the AI calls `ask_user_question` with "有什么要补充的吗？" → you answer in free text |
 | After answering | the AI states in one line what it adjusted, then continues the original task |
 | **Right-click** | ask now / reset position / mute this conversation / hide the whale / about |
-| **Double-click** | hides the whale and leaves a dot in the corner; click the dot to bring it back |
+| **Hide** | right-click → "隐藏小鲸鱼"; a dot stays in the corner and one click brings the whale back |
 | Done with it | say "关掉挂件" and this conversation stops handling widget events |
 
 挂件位置存在浏览器 localStorage（按原点保存，缩放窗口不会跑丢）。控制台里还有 `window.__whisperWhale`（`show() / hide() / reset() / hint(text)`）可以微调。
