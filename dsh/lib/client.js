@@ -206,7 +206,8 @@
         pollUntil: 0,
         spot: 0,
         busy: false,
-        clicking: false // 一次点击还在路上时挡住后续点击
+        clicking: false, // 上一次点击还在等 /targets
+        inflight: false  // 已经开始派发（/click 在路上）
       };
 
       var dom = {};
@@ -306,8 +307,9 @@
             var status = res.payload && res.payload.status;
             if (!status) return;
             if (status.phase === 'delivered') {
+              // 不要再 setBusy(true)：那只是"正在跑"的动画标志，留在这儿会永远不落，
+              // 而点击闸门一旦读它，挂件就会变成点了没反应（2026-11-07 的回归）。
               setBubble('AI 收到啦，等它开口问你 ✓', 3200);
-              setBusy(true);
               stopPolling();
             } else if (status.phase === 'idle') {
               stopPolling();
@@ -321,10 +323,13 @@
       }
 
       function clickFor(target) {
+        if (state.inflight) return;
+        state.inflight = true;
         setBusy(true);
         ping();
         api('/click', { method: 'POST', body: { sessionId: target ? target.id : undefined } }).then(function (res) {
           var payload = res.payload || {};
+          state.inflight = false;
           setBusy(false);
           if (payload.ok) {
             state.lastTarget = payload.target || target;
@@ -347,13 +352,15 @@
           if (payload.reason === 'muted') { setBubble('这个对话的挂件已经关了', 3000); return; }
           if (payload.reason === 'gone') { setBubble(GONE_HINT, 3000); return; }
           setBubble(OFFLINE_HINT, 4200);
-        }).catch(function () { setBusy(false); setBubble(OFFLINE_HINT, 4200); });
+        }).catch(function () { state.inflight = false; setBusy(false); setBubble(OFFLINE_HINT, 4200); });
       }
 
       /** 点一下：0 个在跑 → 提示；1 个 → 直接派发；多个 → 先选。 */
       function onWhaleClick() {
         // 连点就只算一次：避免一次心急点出三条事件、三串气泡。
-        if (state.clicking || state.busy) return;
+        // 只认"请求还在路上"（clicking/inflight），绝不拿动画标志 busy 当闸门 ——
+        // busy 曾被 delivered 分支永久置真，结果挂件"点一下就没反应了"。
+        if (state.clicking || state.inflight) return;
         state.clicking = true;
         hideMenu();
         var settle = function () { state.clicking = false; };

@@ -162,6 +162,27 @@ test('拖动会记住位置，而且不会被误判成点击', async () => {
   assert.equal(typeof stored.bottom, 'number');
 });
 
+test('投递成功后还能再点 —— busy 不能把点击闸门焊死（2026-11-07 回归）', async () => {
+  const app = mount({
+    routes: {
+      '/whisper-whale/targets': { ok: true, targets: [{ id: 's-1', title: '写文档' }] },
+      '/whisper-whale/click': { ok: true, eventId: 'w-1', target: { id: 's-1' } },
+      // 宿主直接报 delivered：走完 startPolling 的成功分支
+      '/whisper-whale/state': { ok: true, status: { phase: 'delivered' } },
+    },
+  });
+
+  clickWhale(app.window, app.q);
+  await app.flush();
+  await new Promise((resolve) => setTimeout(resolve, 1700)); // 等一轮轮询（POLL_MS = 1500）
+  assert.equal(app.window.__whisperWhale.state.busy, false, 'delivered 之后不该把 busy 焊死');
+
+  clickWhale(app.window, app.q);
+  await app.flush();
+  const clicks = app.calls.filter((c) => c.path === '/whisper-whale/click');
+  assert.equal(clicks.length, 2, '第二次点击必须照样派发，实际 ' + clicks.length + ' 次');
+});
+
 test('右键弹菜单，菜单里能隐藏小鲸鱼并留下一个回来的小圆点', async () => {
   const app = mount();
   const button = app.q('.dshww-btn');
